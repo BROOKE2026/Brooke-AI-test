@@ -148,6 +148,13 @@ async def login(req: LoginReq):
     if not cid:
         await asyncio.sleep(0.5)                     # blunt the guessing loop
         raise HTTPException(401, "That passcode was not recognised")
+    # Sweep expired sessions on each login so the maps cannot grow without
+    # bound under sustained traffic. Cheap: one pass over a small dict.
+    now = time.time()
+    dead = [t for t, v in SESSIONS.items() if now - v["created"] > SESSION_TTL]
+    for t in dead:
+        SESSIONS.pop(t, None)
+        HITS.pop(t, None)
     tok = secrets.token_urlsafe(32)
     SESSIONS[tok] = {"client_id": cid, "created": time.time()}
     c = CLIENTS[cid]

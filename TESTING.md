@@ -48,3 +48,14 @@ answers arrive with the Mac Studios (`brooke-inference.sh`, -np slots).
    messages containing digits are never navigation (final battery).
 8. Model-path get_howto now also renders data steps and applies the
    large-amount escalation, so no phrasing can dodge either (final battery).
+
+## Improvement chain 2 (V6-V9, autonomous loop, 2026-08-25)
+
+| Cycle | What | Result |
+|---|---|---|
+| V6 | Phrasing-variety sweep, route_harness.py | routing 21/41 -> 41/41; relationship possessives refused; specificity-weighted keywords |
+| V7 | Cross-account activity questions | instant; fee fixtures reconciled to the penny; harness 49/49 |
+| V8 | Error paths with a dead model host | instant/advice/how-to/nav all keep working; client-facing failure text; rate 30/min; 401 and 429 verified |
+| V9 | Voice pass + session sweep + soak | no em dashes or ops words in templates; expired-session sweep on login; **4,452 requests / 3 min, 0 errors, p50 8ms p95 12ms, memory flat** |
+
+Run the routing battery any time: `cd api && ../.venv/bin/python route_harness.py` (49 cases).
