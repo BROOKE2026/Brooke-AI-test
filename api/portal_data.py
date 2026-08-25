@@ -172,10 +172,12 @@ HOWTOS = {
 import re
 
 _HOWTO_INTENT = re.compile(
-    r"\b(how (do|would|can|to)|where (do|is|can)|what.{0,12}steps|walk me through|"
+    r"\b(how (do|would|can|to)|where (do|is|can|are)|what.{0,12}steps|walk me through|"
+    r"^set ?up\b|\bbook (a|an|some)? ?(time|meeting|call)\b|"
+    r"(i would|i'd) like to (change|update|add|set ?up|link|schedule|book|move|remove)|"
     r"help me (with|fill|update|change|set ?up|add|link|download|request|schedule)|"
     r"can you (help|show|walk).{0,24}(fill|update|change|find|add|set|link|download|request|schedule|get)|"
-    r"i (want|need) to (change|update|add|set ?up|make|request|link|download|schedule|move|take out|put|withdraw|contribute|deposit)|"
+    r"i (want|need) to (change|update|add|set ?up|make|request|link|download|schedule|move|take out|put|withdraw|contribute|deposit|open|close|start|get)|"
     r"\bhow\s*\?+\s*$|\bhow\b\s*$)",
     re.I,
 )
@@ -183,10 +185,10 @@ _HOWTO_INTENT = re.compile(
 KEYWORDS = {
     "beneficiary":        ["beneficiar", "inherit", "who gets", "passes away", "pass away", "if i die",
                            "if something happens", "after my death", "estate"],
-    "address_change":     ["address", "moved", "moving", "new house", "relocat", "mailing"],
+    "address_change":     ["address", "moved", "moving", "new house", "relocat", "mailing", " mail ", " mail goes"],
     "contribution":       ["contribut", "put money in", "add money", "fund my", "deposit", "top up",
-                           "invest more", "more money in"],
-    "withdrawal":         ["withdraw", "take money out", "cash out", "distribution", "pull money", "take out"],
+                           "invest more", "more money in", "money into", "move money"],
+    "withdrawal":         ["withdraw", "take money out", "cash out", "distribution", "pull money", "take out", "get money out", "money out of"],
     "direct_deposit":     ["bank account", "link my bank", "direct deposit", "routing", "checking account", "ach"],
     "trusted_contact":    ["trusted contact", "emergency contact"],
     "download_statement": ["statement", "download"],
@@ -202,7 +204,9 @@ def match_howto(text):
     low = text.lower()
     best, score = None, 0
     for topic, words in KEYWORDS.items():
-        hits = sum(1 for w in words if w in low)
+        # Longer matched keywords are more specific: "direct deposit" must
+        # beat a bare "deposit" that lives under another topic.
+        hits = sum(len(w) for w in words if w in low)
         if hits > score:
             best, score = topic, hits
     return best if score else None
@@ -238,20 +242,27 @@ def _parse_year_window(low):
 
 _DATA_PATTERNS = [
     ("get_performance",       [r"(?<!tax )\breturns?\b", r"\bperformance\b",
+                               r"\bam i up\b", r"\bhow much am i up\b",
+                               r"\b(investments?|portfolio|money|accounts?).{0,14}\b(make|made|earn|earned)\b",
+                               r"\b(make|made|earn|earned)\b.{0,18}\b(investments?|portfolio)\b",
                                r"\bhow (did|have) my (accounts?|portfolio|investments?|money) (do|done|perform|grown?)",
                                r"\bhow much.{0,24}\b(grown|growth|made|earned)\b"]),
     ("get_allocation",        [r"\ballocation\b", r"\basset mix\b",
+                               r"\bwhat do i own\b", r"\bwhat am i (invested )?in\b",
                                r"\bhow.{0,26}\b(invested|split|divided|spread)\b",
                                r"\bstocks?\s+(vs\.?|versus|and)\s+bonds?\b"]),
     ("get_accounts",          [r"\b(account )?balance", r"\bhow much (do i have|is in)",
+                               r"\bhow much money do i have\b",
                                r"\bmy accounts\b", r"\btotal (value|balance)", r"\bnet worth\b",
                                r"\bwhat.{0,12}\bi have\b.{0,16}\b(invested|accounts?)\b"]),
-    ("get_tax_return",        [r"\bagi\b", r"\badjusted gross\b", r"\btax return\b",
+    ("get_tax_return",        [r"\bagi\b", r"\badjusted gross\b", r"\btax return\b", r"\b1040\b",
                                r"\bwhat did i (pay|owe) in tax", r"\beffective (tax )?rate\b",
                                r"\bfiling status\b"]),
     ("get_documents",         [r"\bwhat documents\b", r"\bmy documents\b", r"\bdocuments (do i|on file)",
+                               r"\b(paperwork|documents|forms)\b.{0,16}\bon file\b",
                                r"\bwhat.{0,14}(statements?|paperwork)\b.{0,14}\b(have|file)"]),
     ("get_meetings",          [r"\bnext meeting\b", r"\bmy meetings?\b", r"\bwhen.{0,20}\bmeeting\b",
+                               r"\bmeet with\b", r"\bnext (call|appointment)\b",
                                r"\bupcoming (meeting|appointment)"]),
     ("get_fees",              [r"\bmy fees?\b", r"\badvisory fees?\b", r"\bwhat.{0,12}\bfee",
                                r"\bhow much.{0,20}\b(charge|fee)"]),
@@ -317,10 +328,18 @@ _ABOUT = re.compile(
     r"\b(?:about|for|does|is|has|of)\s+([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20}){1,2})\b")
 
 
+_REL_POSSESSIVE = re.compile(
+    r"\bmy (wife|husband|spouse|partner|son|daughter|child|kid|mother|father|"
+    r"mom|dad|brother|sister)'s\b", re.I)
+
+
 def third_party_name(text, client_name):
     """A person named in the question who is not the signed-in client, else None."""
     if not text or not client_name:
         return None
+    m = _REL_POSSESSIVE.search(text)
+    if m:
+        return "your " + m.group(1).lower()
     own = {p.lower() for p in client_name.split()}
     own |= {"i", "me", "my", "mine", "we", "our", "us"}
     for rx in (_POSSESSIVE, _ABOUT):
@@ -383,7 +402,8 @@ def match_navigation(text):
 
 _ADVICE = re.compile(
     r"\b(how am i doing|am i (on track|doing (ok|okay|well|alright|fine))|"
-    r"should i\b|do you (think|recommend|suggest)|would you (recommend|suggest)|"
+    r"should i\b|do you (think|recommend|suggest|like|love|hate)|would you (recommend|suggest)|"
+    r"what would you do\b|is (it|now|this|today) (a )?good (idea|time)|"
     r"what do you think|is it (a )?good (idea|time)|am i (over|under)\s?\w*|"
     r"is (my|the|this|that)\b[^?]{0,40}\b(normal|ok|okay|good|bad|right|reasonable|"
     r"healthy|aggressive|conservative|too (high|low|much|little|risky))|"
@@ -431,6 +451,8 @@ _TAX_TOPICS = re.compile(
     r"\bestimated (?:tax )?payments?\b|\bquarterly (?:taxes|payments)\b|"
     r"\btax (?:plan|planning|strategy|strategies|projection|bill|situation)\b|"
     r"\b(?:lower|reduce|cut|minimi[sz]e)\b.{0,16}\btax(?:es)?\b|"
+    r"\bpay less\b.{0,20}\b(?:tax(?:es)?|irs)\b|\birs\b|"
+    r"\bconvert\b.{0,28}\broth\b|\broth\b.{0,16}\bconvert|"
     r"\brmds?\b|\brequired minimum\b|\bcapital gains (?:tax|strategy)\b|"
     r"\b1031\b|\bcharitable\b.{0,24}\btax\b|\btax\b.{0,24}\bcharitable\b",
     re.I,
