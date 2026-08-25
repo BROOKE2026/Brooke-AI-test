@@ -218,3 +218,29 @@ _EXTRA = {
 
 for _cid, _extra in _EXTRA.items():
     CLIENTS[_cid].update(_extra)
+
+
+# ---------------------------------------------------------------------------
+# Calendar-year account returns (%, net of fees). Source of truth for the
+# performance analytics: stored as data, never inferred from balance deltas,
+# because balances move with contributions and withdrawals too.
+# ---------------------------------------------------------------------------
+
+_ANNUAL_RETURNS = {
+    "CLIENT-001": {
+        "ACC-4471": {2023: 16.8, 2024: 12.4, 2025: 10.1},
+        "ACC-4472": {2023: 11.2, 2024: 8.9,  2025: 7.4},
+        "ACC-4473": {2023: 24.1, 2024: 17.9, 2025: 12.6},
+    },
+    "CLIENT-002": {
+        "ACC-8812": {2023: 22.4, 2024: 18.7, 2025: 13.9},
+        "ACC-8813": {2023: 24.0, 2024: 17.5, 2025: 12.8},
+    },
+    "CLIENT-003": {
+        "ACC-2201": {2023: 13.1, 2024: 10.2, 2025: 8.7},
+        "ACC-2202": {2023: 11.0, 2024: 8.8,  2025: 7.2},
+        "ACC-2203": {2023: 24.1, 2024: 17.9, 2025: 12.6},
+    },
+}
+for _cid, _ar in _ANNUAL_RETURNS.items():
+    CLIENTS[_cid]["annual_returns"] = _ar

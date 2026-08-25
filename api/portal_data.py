@@ -219,7 +219,29 @@ def match_howto(text):
 
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 
+_WORDNUM = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9,"ten":10}
+
+
+def _parse_year_window(low):
+    """'past three years' -> 3; 'last year' -> 1; 'this year'/'ytd' -> 0 (YTD only)."""
+    m = re.search(r"\b(?:past|last)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years?\b", low)
+    if m:
+        tok = m.group(1)
+        return int(tok) if tok.isdigit() else _WORDNUM[tok]
+    if re.search(r"\b(this year|ytd|year to date|so far this year)\b", low):
+        return 0
+    if re.search(r"\blast year\b", low):
+        return 1
+    return 3
+
+
 _DATA_PATTERNS = [
+    ("get_performance",       [r"(?<!tax )\breturns?\b", r"\bperformance\b",
+                               r"\bhow (did|have) my (accounts?|portfolio|investments?|money) (do|done|perform|grown?)",
+                               r"\bhow much.{0,24}\b(grown|growth|made|earned)\b"]),
+    ("get_allocation",        [r"\ballocation\b", r"\basset mix\b",
+                               r"\bhow.{0,26}\b(invested|split|divided|spread)\b",
+                               r"\bstocks?\s+(vs\.?|versus|and)\s+bonds?\b"]),
     ("get_accounts",          [r"\b(account )?balance", r"\bhow much (do i have|is in)",
                                r"\bmy accounts\b", r"\btotal (value|balance)", r"\bnet worth\b",
                                r"\bwhat.{0,12}\bi have\b.{0,16}\b(invested|accounts?)\b"]),
@@ -254,6 +276,14 @@ def match_data_query(text, this_year):
     for tool, pats in _DATA_PATTERNS:
         if not any(re.search(p, low) for p in pats):
             continue
+        if tool == "get_performance":
+            # "tax return" must never land here
+            if re.search(r"\btax\b", low):
+                continue
+            n = _parse_year_window(low)
+            # n==0 means "this year": YTD is always included in the result,
+            # so fetch the smallest window and let the answer lead with YTD.
+            return tool, {"years": n or 1}
         if tool == "get_tax_return":
             m = _YEAR.search(text)
             if m:

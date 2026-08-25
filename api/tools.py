@@ -9,6 +9,7 @@ THE SECURITY RULE, made concrete:
 """
 
 from demo_data import CLIENTS
+import analytics
 from portal_data import HOWTOS, FORMS, TABS
 
 # ---------------------------------------------------------------- schemas ---
@@ -107,6 +108,33 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "get_fees",
             "description": "The client's advisory fee rate, billing frequency, and the most recent fee charged.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_performance",
+            "description": (
+                "The client's investment returns: per-account and combined, for the last N "
+                "complete calendar years plus year-to-date. Use for any question about returns, "
+                "performance, growth, or how their investments have done."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "years": {"type": "integer",
+                              "description": "How many complete calendar years back, 1-10. Default 3."}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_allocation",
+            "description": "How the client's money is split across asset classes (US stocks, international stocks, bonds, cash), in dollars and percent, across all accounts.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -268,7 +296,22 @@ def get_contribution_room(client_id, year=None):
 
 
 def get_fees(client_id):
-    return {"fees": _client(client_id)["fees"]}
+    c = _client(client_id)
+    paid = analytics.fees_paid(c)
+    return {"fees": c["fees"], "paid_this_year": paid}
+
+
+def get_performance(client_id, years=None):
+    c = _client(client_id)
+    try:
+        years = int(years) if years is not None else 3
+    except (TypeError, ValueError):
+        years = 3
+    return analytics.performance(c, years)
+
+
+def get_allocation(client_id):
+    return analytics.allocation(_client(client_id))
 
 
 def get_howto(client_id, topic=None):
@@ -297,6 +340,8 @@ REGISTRY = {
     "get_beneficiaries":     get_beneficiaries,
     "get_contribution_room": get_contribution_room,
     "get_fees":              get_fees,
+    "get_performance":       get_performance,
+    "get_allocation":        get_allocation,
     "get_howto":             get_howto,
     "navigate_to":           navigate_to,
     "escalate_to_advisor": escalate_to_advisor,
