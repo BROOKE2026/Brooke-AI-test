@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 import tools
 import portal_data
+import instant
 from demo_data import PASSCODES, CLIENTS
 
 OLLAMA   = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -318,6 +319,14 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 yield sse({"type": "tool", "name": dname, "args": dargs})
                 if isinstance(result, dict) and isinstance(result.get("open"), dict):
                     yield sse({"type": "link", **result["open"]})
+                # Canonical question + clean data: the server writes the answer
+                # itself. No model, so it is instant and fully concurrent.
+                text = instant.render(dname, dargs, result, CLIENTS[client_id])
+                if text:
+                    yield sse({"type": "token", "text": text})
+                    yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
+                               "instant": True})
+                    return
                 messages.append({"role": "assistant", "content": "", "tool_calls": [
                     {"function": {"name": dname, "arguments": dargs}}]})
                 messages.append({"role": "tool", "name": dname,
