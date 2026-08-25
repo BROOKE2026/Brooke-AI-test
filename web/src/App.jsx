@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { logout, health, getPortal, getApiBase, setApiBase } from './api.js'
+import { logout, health, getPortal, getApiBase, setApiBase, clearApiOverride, autoSelectBase, CANDIDATES } from './api.js'
 import Login from './Login.jsx'
 import Chat from './Chat.jsx'
 import Portal from './Portal.jsx'
@@ -18,6 +18,16 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [loadErr, setLoadErr] = useState(null)
+  const [probing, setProbing] = useState(true)
+  const [probeAt, setProbeAt] = useState(null)
+
+  // Find a reachable endpoint before anything tries to call one.
+  useEffect(() => {
+    let alive = true
+    autoSelectBase(b => alive && setProbeAt(b))
+      .finally(() => alive && setProbing(false))
+    return () => { alive = false }
+  }, [])
 
   const save = (s) => {
     setSession(s)
@@ -41,6 +51,20 @@ export default function App() {
     setFocus(item || null)
     if (window.innerWidth < 900) setChatOpen(false)
   }, [])
+
+  if (probing) {
+    return (
+      <div className="app">
+        <Header onSettings={() => setSettingsOpen(true)} />
+        <main className="center">
+          <div className="card" style={{ textAlign: 'center' }}>
+            <p className="muted">Finding the server</p>
+            {probeAt && <p className="tiny">trying {probeAt.replace(/^https?:\/\//, '')}</p>}
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   if (!session) {
     return (
@@ -150,7 +174,18 @@ function Settings({ onClose }) {
         <input className="input" value={url} onChange={e => setUrl(e.target.value)}
                placeholder="https://something.trycloudflare.com" spellCheck={false} />
         {msg && <div className={msg.ok ? 'note note-ok' : 'note note-bad'}>{msg.text}</div>}
+        <div className="demo-box" style={{ marginTop: 14 }}>
+          <div className="demo-title">Known endpoints</div>
+          {CANDIDATES.map(c => (
+            <button key={c} className="demo-row" onClick={() => setUrl(c)}>
+              <span><code style={{ fontSize: 11 }}>{c.replace(/^https?:\/\//, '')}</code></span>
+            </button>
+          ))}
+        </div>
         <div className="row">
+          <button className="ghost-btn" onClick={() => { clearApiOverride(); location.reload() }}>
+            Use automatic
+          </button>
           <button className="ghost-btn" onClick={onClose}>Close</button>
           <button className="btn" onClick={test} disabled={busy}>{busy ? 'Testing' : 'Save and test'}</button>
         </div>

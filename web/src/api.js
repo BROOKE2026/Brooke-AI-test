@@ -1,17 +1,51 @@
 // Talks to the Brooke API. The base URL is stored in localStorage so the
 // published site never needs rebuilding when the tunnel URL changes.
 
-const KEY = 'brooke.apiBase'
+const KEY  = 'brooke.apiBase'      // manual override, wins over everything
+const AUTO = 'brooke.apiAuto'      // whichever candidate answered this session
+
+// The API is reachable by more than one route, and which one works depends on
+// where the viewer is. A tailnet member resolves the Tailscale name to an
+// internal address; everyone else takes the public ingress. Rather than pick
+// one and hope, probe them and use whichever actually answers.
+export const CANDIDATES = [
+  import.meta.env.VITE_API_BASE,
+  'https://wayne-heater-britain-detected.trycloudflare.com',
+  'https://servers-mac-mini.tail64e16c.ts.net',
+  'http://localhost:8080',
+].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
 
 export function getApiBase() {
-  // Precedence: whatever the user typed in Connection settings, then the URL
-  // baked in at build time (VITE_API_BASE), then a local dev server.
   return localStorage.getItem(KEY)
-      || import.meta.env.VITE_API_BASE
-      || 'http://localhost:8080'
+      || sessionStorage.getItem(AUTO)
+      || CANDIDATES[0]
+}
+
+/** Probe each candidate and remember the first that responds. */
+export async function autoSelectBase(onProgress) {
+  if (localStorage.getItem(KEY)) return getApiBase()   // user chose, respect it
+  const cached = sessionStorage.getItem(AUTO)
+  if (cached) return cached
+  for (const base of CANDIDATES) {
+    onProgress?.(base)
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 5000)
+      const r = await fetch(`${base}/api/health`, { signal: ctrl.signal })
+      clearTimeout(timer)
+      if (r.ok) { sessionStorage.setItem(AUTO, base); return base }
+    } catch { /* try the next one */ }
+  }
+  return CANDIDATES[0]
 }
 export function setApiBase(url) {
   localStorage.setItem(KEY, url.replace(/\/+$/, ''))
+  sessionStorage.removeItem(AUTO)
+}
+
+export function clearApiOverride() {
+  localStorage.removeItem(KEY)
+  sessionStorage.removeItem(AUTO)
 }
 
 export async function health() {

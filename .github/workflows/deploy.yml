@@ -29,9 +29,10 @@ jobs:
       - run: npm run build
         working-directory: web
         env:
-          # Permanent Tailscale Funnel hostname for the API. Baked in at build
-          # time so the published site works with nothing to configure.
-          VITE_API_BASE: https://servers-mac-mini.tail64e16c.ts.net
+          # First endpoint the app tries. The client probes this and the other
+          # known endpoints on load and uses whichever answers, so a viewer on
+          # the tailnet and one on the public internet both get a working route.
+          VITE_API_BASE: https://wayne-heater-britain-detected.trycloudflare.com
       - uses: actions/configure-pages@v5
         with:
           enablement: true
