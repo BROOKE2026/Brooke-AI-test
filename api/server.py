@@ -337,11 +337,15 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 result = tools.execute(client_id, "navigate_to", {"tab": nav_tab})
                 yield sse({"type": "tool", "name": "navigate_to", "args": {"tab": nav_tab}})
                 if isinstance(result.get("open"), dict):
+                    # navigate = the UI switches tabs right now; the button
+                    # stays in the transcript for finding the page again later.
+                    yield sse({"type": "navigate", **result["open"]})
                     yield sse({"type": "link", **result["open"]})
-                messages.append({"role": "assistant", "content": "", "tool_calls": [
-                    {"function": {"name": "navigate_to", "arguments": {"tab": nav_tab}}}]})
-                messages.append({"role": "tool", "name": "navigate_to",
-                                 "content": json.dumps(result)})
+                yield sse({"type": "token", "text":
+                    "Taking you there now. The button below will bring you back any time."})
+                yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
+                           "instant": True})
+                return
 
             elif howto_topic:
                 result = tools.execute(client_id, "get_howto", {"topic": howto_topic})
@@ -353,30 +357,23 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                     yield sse({"type": "steps", "title": result.get("title"),
                                "steps": result["steps"], "note": result.get("note")})
                 if isinstance(result.get("open"), dict):
+                    yield sse({"type": "navigate", **result["open"]})
                     yield sse({"type": "link", **result["open"]})
-                messages.append({"role": "assistant", "content": "", "tool_calls": [
-                    {"function": {"name": "get_howto",
-                                  "arguments": {"topic": howto_topic}}}]})
-                messages.append({"role": "system", "content":
-                    "The steps and the button are already displayed to the client. Do NOT "
-                    "repeat them, do not list them, do not describe them. Write ONE short "
-                    "sentence introducing them, such as \"Here is how to do that.\""})
-                messages.append({"role": "tool", "name": "get_howto",
-                                 "content": json.dumps(result)})
+                # The intro sentence is derivable from the how-to title, and the
+                # steps and button are already rendered. No model needed at all.
+                title = (result.get("title") or "do that").lower()
+                text = "Here is how to %s. I am taking you to the right place now." % title
                 if big and howto_topic in ("withdrawal", "contribution"):
-                    esc = tools.execute(client_id, "escalate_to_advisor",
-                                        {"topic": "Large amount (%s): %s" % (big, req.message[:200])})
+                    tools.execute(client_id, "escalate_to_advisor",
+                                  {"topic": "Large amount (%s): %s" % (big, req.message[:200])})
                     yield sse({"type": "tool", "name": "escalate_to_advisor",
                                "args": {"topic": "large amount"}})
-                    messages.append({"role": "tool", "name": "escalate_to_advisor",
-                                     "content": json.dumps(esc)})
-                    messages.append({"role": "system", "content":
-                        "A large sum is involved so this was also sent to their advisor. "
-                        "Your reply must still contain ALL of the get_howto steps, one per "
-                        "line starting with '- ', exactly as before. Do not shorten or omit "
-                        "The steps are already shown. Write one short sentence introducing "
-                        "them, then one more saying you have looped in their advisor given "
-                        "the amount. Two sentences total, no lists."})
+                    text += (" Because of the amount involved, I have also looped in %s."
+                             % CLIENTS[client_id]["advisor"])
+                yield sse({"type": "token", "text": text})
+                yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
+                           "instant": True})
+                return
             elif data_hit:
                 dname, dargs = data_hit
                 result = tools.execute(client_id, dname, dargs)

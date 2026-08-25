@@ -69,6 +69,10 @@ export default function Chat({ session, onExpired, onNavigate, onClose, onRefres
           // Rendered verbatim from the server. Never model-generated, so the
           // instructions a client follows cannot be paraphrased or truncated.
           patchLast(l => ({ ...l, steps: { title: e.title, list: e.steps, note: e.note } }))
+        } else if (e.type === 'navigate') {
+          // Brooke drives: switch the portal to the right tab now. The
+          // sidebar stays open so the conversation continues alongside.
+          onNavigate(e.tab, e.item)
         } else if (e.type === 'link') {
           // Destination comes from the server, never from the model's prose.
           patchLast(l => ({ ...l, links: [...l.links, { label: e.label, tab: e.tab, item: e.item }] }))

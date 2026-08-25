@@ -133,7 +133,12 @@ def _alloc(args, r, c):
     return "Across all accounts your {} total is invested as: {}.".format(_money(r["total"]), parts)
 
 
+def _navigate(args, r, c):
+    return "Taking you there now. The button below will bring you back to it any time."
+
+
 _RENDERERS = {
+    "navigate_to": _navigate,
     "get_accounts": _accounts,
     "get_tax_return": _tax,
     "get_fees": _fees,
