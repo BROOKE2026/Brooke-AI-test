@@ -4,7 +4,11 @@
 const KEY = 'brooke.apiBase'
 
 export function getApiBase() {
-  return localStorage.getItem(KEY) || 'http://localhost:8080'
+  // Precedence: whatever the user typed in Connection settings, then the URL
+  // baked in at build time (VITE_API_BASE), then a local dev server.
+  return localStorage.getItem(KEY)
+      || import.meta.env.VITE_API_BASE
+      || 'http://localhost:8080'
 }
 export function setApiBase(url) {
   localStorage.setItem(KEY, url.replace(/\/+$/, ''))

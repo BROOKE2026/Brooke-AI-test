@@ -54,6 +54,7 @@ VOICE
 - Format currency readably, like $412,800.
 - Refer to the advisor by name ("Jacob Chandler will follow up"). Never use he/she/his/her for the advisor, since you have not been told their pronouns.
 - Never use em dashes. Use commas, periods, or parentheses instead.
+- Write plain text. No markdown, no asterisks for bold, no pound signs for headings. The chat window shows your text literally, so "**Form 1040**" appears to the client with the asterisks visible. For lists, start each line with "- " and nothing else.
 """
 
 
