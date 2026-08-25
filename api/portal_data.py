@@ -175,7 +175,8 @@ _HOWTO_INTENT = re.compile(
     r"\b(how (do|would|can|to)|where (do|is|can)|what.{0,12}steps|walk me through|"
     r"help me (with|fill|update|change|set ?up|add|link|download|request|schedule)|"
     r"can you (help|show|walk).{0,24}(fill|update|change|find|add|set|link|download|request|schedule|get)|"
-    r"i (want|need) to (change|update|add|set ?up|make|request|link|download|schedule|move|take out|put))\b",
+    r"i (want|need) to (change|update|add|set ?up|make|request|link|download|schedule|move|take out|put|withdraw|contribute|deposit)|"
+    r"\bhow\s*\?+\s*$|\bhow\b\s*$)",
     re.I,
 )
 
@@ -360,6 +361,10 @@ _NAV_RES = {
 def match_navigation(text):
     """Return a tab only when a navigation verb binds directly to a section."""
     if not text:
+        return None
+    # A message naming an account id or any number is a question about that
+    # thing, not a request to be taken somewhere.
+    if re.search(r"\d", text):
         return None
     for tab, rx in _NAV_RES.items():
         if rx.search(text):

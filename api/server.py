@@ -488,7 +488,18 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                         # The destination comes from the tool, never from the model,
                         # so Brooke cannot send a client to a page that does not exist.
                         if isinstance(result, dict) and isinstance(result.get("open"), dict):
+                            yield sse({"type": "navigate", **result["open"]})
                             yield sse({"type": "link", **result["open"]})
+                        # Even when the MODEL chose get_howto, steps render from
+                        # data and a large amount still loops in the advisor.
+                        if name == "get_howto" and isinstance(result, dict) and result.get("steps"):
+                            yield sse({"type": "steps", "title": result.get("title"),
+                                       "steps": result["steps"], "note": result.get("note")})
+                            if big and args.get("topic") in ("withdrawal", "contribution"):
+                                tools.execute(client_id, "escalate_to_advisor",
+                                              {"topic": "Large amount (%s): %s" % (big, req.message[:200])})
+                                yield sse({"type": "tool", "name": "escalate_to_advisor",
+                                           "args": {"topic": "large amount"}})
                         messages.append({"role": "tool", "name": name,
                                          "content": json.dumps(result)})
                     yield sse({"type": "status", "text": "Checking your records"})
