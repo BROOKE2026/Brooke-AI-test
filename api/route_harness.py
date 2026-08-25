@@ -8,6 +8,10 @@ import portal_data
 
 
 def route(text, client_name="Sarah Whitfield"):
+    multi = portal_data.match_multi_data(text, 2026)
+    if multi and not (portal_data.third_party_name(text, client_name)
+                      or portal_data.tax_topic(text) or portal_data.advice_intent(text)):
+        return "multi:" + "+".join(t for t, a in multi)
     if portal_data.third_party_name(text, client_name):
         return "third_party"
     if portal_data.tax_topic(text):
@@ -86,6 +90,11 @@ CASES = [
     ("how much can I put in my Roth this year", "data:get_contribution_room"),
     ("I want to open another account", "howto_intent"),
     ("tell me about BrookHaven", "model"),
+    # --- multi-intent ---
+    ("What are my balances and when is my next meeting", "multi:get_accounts+get_meetings"),
+    ("What was my AGI last year and how much have I paid in fees", "multi:get_tax_return+get_fees"),
+    ("Who are my beneficiaries and what did I buy recently", "multi:get_beneficiaries+get_recent_activity"),
+    ("How is my money split between stocks and bonds", "data:get_allocation"),
 ]
 
 if __name__ == "__main__":

@@ -59,3 +59,4 @@ answers arrive with the Mac Studios (`brooke-inference.sh`, -np slots).
 | V9 | Voice pass + session sweep + soak | no em dashes or ops words in templates; expired-session sweep on login; **4,452 requests / 3 min, 0 errors, p50 8ms p95 12ms, memory flat** |
 
 Run the routing battery any time: `cd api && ../.venv/bin/python route_harness.py` (49 cases).
+| V10 | Multi-intent messages | "balances and next meeting" answers both in 0.1s; "stocks and bonds" stays one question; advice wins mixed messages; harness 53/53 |

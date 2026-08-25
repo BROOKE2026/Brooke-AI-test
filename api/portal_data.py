@@ -503,3 +503,32 @@ def is_hard(text):
     if not text:
         return False
     return bool(_HARD.search(text)) or len(text) > 220 or text.count("?") > 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-intent messages: "what are my balances and when is my next meeting?"
+# Only combines when EVERY segment independently routes to a data tool, so
+# guard precedence (third-party, advice, tax) and phrases that merely contain
+# "and" ("stocks and bonds") are untouched.
+# ---------------------------------------------------------------------------
+
+_SEGMENT_SPLIT = re.compile(r"\s*(?:\band also\b|\band\b|;|\?\s+)\s*", re.I)
+
+
+def match_multi_data(text, this_year):
+    """Return [(tool, args), ...] when a message asks 2-3 answerable data
+    questions at once, else None."""
+    if not text:
+        return None
+    segs = [s.strip() for s in _SEGMENT_SPLIT.split(text) if s.strip()]
+    if not 2 <= len(segs) <= 3:
+        return None
+    hits, seen = [], set()
+    for seg in segs:
+        hit = match_data_query(seg, this_year)
+        if not hit:
+            return None          # one unanswerable segment kills the combo
+        if hit[0] not in seen:   # "balance and total balance" collapses
+            seen.add(hit[0])
+            hits.append(hit)
+    return hits if len(hits) >= 2 else None

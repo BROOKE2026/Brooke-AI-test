@@ -312,9 +312,11 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
     if third_party or advice or taxq:
         howto_topic = None if third_party else howto_topic
         howto_intent = False if third_party else howto_intent
-    data_hit = None
+    data_hit, multi_hits = None, None
     if not third_party and not advice and not taxq and not nav_tab and not howto_topic and not howto_intent:
-        data_hit = portal_data.match_data_query(req.message, date.today().year)
+        multi_hits = portal_data.match_multi_data(req.message, date.today().year)
+        if not multi_hits:
+            data_hit = portal_data.match_data_query(req.message, date.today().year)
     hard = (not third_party and not advice and not taxq and not nav_tab
             and not howto_topic and not howto_intent and not data_hit
             and portal_data.is_hard(req.message))
@@ -392,6 +394,23 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
                            "instant": True})
                 return
+            elif multi_hits:
+                parts = []
+                for dname, dargs in multi_hits:
+                    result = tools.execute(client_id, dname, dargs)
+                    yield sse({"type": "tool", "name": dname, "args": dargs})
+                    text = instant.render(dname, dargs, result, CLIENTS[client_id])
+                    if text:
+                        parts.append(text)
+                if parts:
+                    yield sse({"type": "token", "text": "\n\n".join(parts)})
+                    yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
+                               "instant": True})
+                    return
+                # a template failed: fall through to the model with the raw question
+                messages.append({"role": "system", "content":
+                    "Answer each part of the client's question in order, using tools."})
+
             elif data_hit:
                 dname, dargs = data_hit
                 result = tools.execute(client_id, dname, dargs)
