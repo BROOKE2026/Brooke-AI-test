@@ -12,12 +12,13 @@ export default function Login({ onSignedIn, onSettings }) {
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const submit = async (e) => {
+  const submit = async (e, code) => {
     e?.preventDefault()
-    if (!passcode.trim()) return
+    const pc = (code ?? passcode).trim()
+    if (!pc) return
     setBusy(true); setErr(null)
     try {
-      onSignedIn(await login(passcode))
+      onSignedIn(await login(pc))
     } catch (e) {
       setErr(/fetch|Failed|NetworkError/.test(e.message)
         ? `Cannot reach the server at ${getApiBase()}. Check connection settings.`
@@ -42,8 +43,10 @@ export default function Login({ onSignedIn, onSettings }) {
         </form>
         <div className="demo-box">
           <div className="demo-title">Demo logins</div>
+          <p className="tiny" style={{marginTop:0,marginBottom:8}}>Click one to sign straight in.</p>
           {DEMO_LOGINS.map(d => (
-            <button key={d.code} className="demo-row" onClick={() => setPasscode(d.code)}>
+            <button key={d.code} className="demo-row" disabled={busy}
+                    onClick={() => { setPasscode(d.code); submit(null, d.code) }}>
               <code>{d.code}</code>
               <span>{d.who}<em>{d.note}</em></span>
             </button>
