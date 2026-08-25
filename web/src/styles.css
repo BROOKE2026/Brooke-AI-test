@@ -150,3 +150,98 @@ body{
   color:#0d1117;font-size:19px;font-weight:700;cursor:pointer;line-height:1}
 .send:disabled{opacity:.35;cursor:not-allowed}
 .disclaimer{font-size:11px;color:var(--muted);text-align:center;padding:6px 18px 12px}
+
+/* ===================== portal shell ===================== */
+.app-wide{max-width:1400px}
+.tabbar{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--line);
+  background:var(--panel);overflow-x:auto;scrollbar-width:none}
+.tabbar::-webkit-scrollbar{display:none}
+.tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);
+  font:inherit;font-size:13.5px;padding:11px 14px;cursor:pointer;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.askbtn{margin-left:auto;color:var(--accent);font-weight:600}
+
+.body{flex:1;display:flex;min-height:0}
+.main{flex:1;overflow-y:auto;padding:26px 28px 60px;min-width:0}
+.pageload{padding:40px;color:var(--muted)}
+.page h1{font-size:22px;font-weight:650;letter-spacing:-.3px;margin-bottom:18px}
+.page h2{font-size:14px;font-weight:650;margin:26px 0 10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.5px}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+  padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+.tile-k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+.tile-v{font-size:21px;font-weight:650;letter-spacing:-.4px}
+.tile-s{font-size:12px;color:var(--muted)}
+
+/* tables */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tbl thead th{background:var(--panel2);text-align:left;font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:9px 12px;
+  border-bottom:1px solid var(--line)}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--line)}
+.tbl tbody tr:last-child td{border-bottom:0}
+.tbl .r{text-align:right}
+.tbl tr.click{cursor:pointer}
+.tbl tr.click:hover{background:var(--panel2)}
+.tbl code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--accent)}
+.pos{color:var(--ok)} .neg{color:var(--bad)}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted)}
+.tag.on{border-color:var(--ok);color:var(--ok)}
+
+/* pills + account header */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);
+  padding:9px 13px;font:inherit;font-size:13px;cursor:pointer;display:flex;flex-direction:column;
+  align-items:flex-start;gap:2px;text-align:left}
+.pill em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.pill.on{border-color:var(--accent);background:var(--panel)}
+.acct-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;
+  padding:14px 16px;background:var(--panel2);border:1px solid var(--line);border-radius:11px}
+.acct-head .tile-k{display:block;margin-bottom:3px}
+.acct-head .r{text-align:right;display:flex;flex-direction:column}
+
+.rowcard{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 15px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+.rowcard div{display:flex;flex-direction:column;gap:2px}
+
+.callout{margin-top:12px;padding:13px 15px;border:1px solid var(--warn);border-radius:10px;
+  background:rgba(210,153,34,.09);font-size:13.5px;display:flex;flex-wrap:wrap;
+  align-items:center;gap:10px}
+
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.formcard{border:1px solid var(--line);border-radius:11px;padding:15px;display:flex;
+  flex-direction:column;gap:6px;align-items:flex-start;transition:border-color .2s,box-shadow .2s}
+.formcard p{font-size:13px;color:var(--muted);margin:0}
+.formcard.focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,169,97,.16)}
+.btn.sm,.ghost-btn.sm{padding:6px 12px;font-size:12.5px;margin-top:4px}
+
+/* Brooke's navigation buttons */
+.gobtn{align-self:flex-start;background:var(--panel);border:1px solid var(--accent);
+  color:var(--accent);border-radius:9px;padding:9px 14px;font:inherit;font-size:13px;
+  font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.gobtn:hover{background:var(--accent);color:#0d1117}
+.gobtn.sm{padding:6px 11px;font-size:12.5px}
+.arrow{font-size:14px}
+
+/* chat as a side panel */
+.chatpanel{width:370px;flex:none;display:flex;flex-direction:column;min-height:0;
+  border-left:1px solid var(--line);background:var(--panel)}
+.chathead{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid var(--line)}
+.chathead-l{display:flex;align-items:center;gap:8px;font-size:14px}
+.avatar.sm{width:24px;height:24px;border-radius:7px;font-size:11px}
+.chatpanel .scroll{padding:16px 14px}
+.chatpanel .welcome{padding:14px 4px;text-align:left}
+.chatpanel .bubble-wrap{max-width:100%}
+.chatpanel .composer{padding:10px 14px 4px}
+.chatpanel .starters{margin-top:14px}
+
+@media (max-width:900px){
+  .chatpanel{position:fixed;inset:0;width:auto;z-index:40;border-left:0}
+  .main{padding:20px 16px 50px}
+}

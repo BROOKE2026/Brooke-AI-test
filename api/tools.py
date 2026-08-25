@@ -9,6 +9,7 @@ THE SECURITY RULE, made concrete:
 """
 
 from demo_data import CLIENTS
+from portal_data import HOWTOS, FORMS, TABS
 
 # ---------------------------------------------------------------- schemas ---
 # Sent to the model. Note that no schema exposes a client/user/account-owner id.
@@ -67,6 +68,85 @@ TOOL_SCHEMAS = [
             "name": "get_meetings",
             "description": "List the client's upcoming and past meetings with their advisor.",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_activity",
+            "description": "List recent transactions in one account: dividends, buys, sells, contributions, withdrawals, fees.",
+            "parameters": {
+                "type": "object",
+                "properties": {"account_id": {"type": "string", "description": "Account id such as ACC-4471"}},
+                "required": ["account_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_beneficiaries",
+            "description": "Show who is named as beneficiary on each of the client's accounts, and which accounts have none named.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_contribution_room",
+            "description": "How much the client has contributed to their retirement accounts for a year and how much room is left.",
+            "parameters": {
+                "type": "object",
+                "properties": {"year": {"type": "integer", "description": "Contribution year, e.g. 2026"}},
+                "required": ["year"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_fees",
+            "description": "The client's advisory fee rate, billing frequency, and the most recent fee charged.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_howto",
+            "description": (
+                "Get step by step instructions for doing something in the portal, plus a button "
+                "that takes the client straight to the right place. Use this for any 'how do I', "
+                "'where do I', or 'can you help me' question about using the portal or filling in a form."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "enum": sorted(HOWTOS.keys()),
+                        "description": "Which task the client is asking about",
+                    }
+                },
+                "required": ["topic"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "navigate_to",
+            "description": (
+                "Give the client a button to a section of the portal, when they just want to be taken "
+                "somewhere rather than told how to do a task. Do not use this if a get_howto topic fits."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tab": {"type": "string", "enum": sorted(TABS.keys()), "description": "Which section"}
+                },
+                "required": ["tab"],
+            },
         },
     },
     {
@@ -148,12 +228,77 @@ def escalate_to_advisor(client_id, topic=None):
     }
 
 
+def get_activity(client_id, account_id=None):
+    c = _client(client_id)
+    owned = {a["id"] for a in c["accounts"]}
+    if account_id not in owned:
+        return {"error": "That account is not available on this login.",
+                "your_accounts": sorted(owned)}
+    return {"account_id": account_id, "activity": c["activity"].get(account_id, [])}
+
+
+def get_beneficiaries(client_id):
+    c = _client(client_id)
+    out, missing = [], []
+    for a in c["accounts"]:
+        named = c["beneficiaries"].get(a["id"], [])
+        out.append({"account_id": a["id"], "type": a["type"], "beneficiaries": named})
+        if not named:
+            missing.append(a["id"])
+    return {"accounts": out, "accounts_with_none_named": missing}
+
+
+def get_contribution_room(client_id, year=None):
+    c = _client(client_id)
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        return {"error": "A valid four-digit year is required."}
+    rec = c["contributions"].get(year)
+    if not rec:
+        return {"error": "No contribution tracking on file for %s." % year,
+                "years_available": sorted(c["contributions"].keys(), reverse=True)}
+    rows = []
+    for acct, r in rec.items():
+        rows.append({"account_id": acct, "account_type": r["type"],
+                     "contributed": r["contributed"], "limit": r["limit"],
+                     "remaining": max(0, r["limit"] - r["contributed"])})
+    return {"year": year, "accounts": rows,
+            "note": "Limits shown are the figures on file for this demo, not tax advice."}
+
+
+def get_fees(client_id):
+    return {"fees": _client(client_id)["fees"]}
+
+
+def get_howto(client_id, topic=None):
+    _client(client_id)
+    h = HOWTOS.get(topic)
+    if not h:
+        return {"error": "No instructions on file for that.",
+                "topics_available": sorted(HOWTOS.keys())}
+    return {"title": h["title"], "steps": h["steps"], "note": h.get("note"), "open": h["open"]}
+
+
+def navigate_to(client_id, tab=None):
+    _client(client_id)
+    if tab not in TABS:
+        return {"error": "No such section.", "sections": sorted(TABS.keys())}
+    return {"section": TABS[tab], "open": {"tab": tab, "label": "Open %s" % TABS[tab]}}
+
+
 REGISTRY = {
     "get_tax_return":      get_tax_return,
     "get_accounts":        get_accounts,
     "get_holdings":        get_holdings,
     "get_documents":       get_documents,
     "get_meetings":        get_meetings,
+    "get_activity":          get_activity,
+    "get_beneficiaries":     get_beneficiaries,
+    "get_contribution_room": get_contribution_room,
+    "get_fees":              get_fees,
+    "get_howto":             get_howto,
+    "navigate_to":           navigate_to,
     "escalate_to_advisor": escalate_to_advisor,
 }
 

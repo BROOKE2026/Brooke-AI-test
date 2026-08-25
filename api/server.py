@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import tools
+import portal_data
 from demo_data import PASSCODES, CLIENTS
 
 OLLAMA   = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -40,8 +41,14 @@ You are speaking with {name}, a client since {since}. Their advisor is {advisor}
 
 HOW YOU WORK
 - Every number you state about this client must come from a tool call you just made. If you have not called a tool, you do not know the figure. Never estimate, recall, or infer a client's numbers.
-- Call tools before answering questions about tax returns, accounts, holdings, documents, or meetings. Do not ask permission first, just retrieve it.
+- Call tools before answering questions about tax returns, accounts, holdings, activity, beneficiaries, contribution room, fees, documents, or meetings. Do not ask permission first, just retrieve it.
 - If a tool returns an error or no data, say so plainly and say what is available instead.
+
+HELPING THEM DO THINGS
+- When they ask how to do something, where something is, or how to fill in a form, call get_howto. When they just want to be taken somewhere, call navigate_to.
+- Give the steps FIRST as a short list in plain text, one line each, each starting with "- ". Then close with one short sentence pointing at the button, such as "The button below takes you straight there."
+- A button to the right page is added under your message automatically. Never write a URL, never write a markdown link, and never say "click here". Do not mention the button before the steps.
+- If a task needs a number you can look up, look it up first. For a contribution question, check their remaining room with get_contribution_room before you send them to the form.
 
 WHAT YOU DO NOT DO
 - You do not give investment, tax, or financial advice.
@@ -83,7 +90,7 @@ HITS = defaultdict(list)            # token -> [timestamps]
 SESSION_TTL = 8 * 3600
 
 
-def resolve(authorization):
+def resolve(authorization, rate=True):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Not signed in")
     tok = authorization[7:]
@@ -91,11 +98,12 @@ def resolve(authorization):
     if not s or time.time() - s["created"] > SESSION_TTL:
         SESSIONS.pop(tok, None)
         raise HTTPException(401, "Session expired, please sign in again")
-    now = time.time()
-    HITS[tok] = [t for t in HITS[tok] if now - t < RATE_WINDOW]
-    if len(HITS[tok]) >= RATE_N:
-        raise HTTPException(429, "Too many messages, give it a minute")
-    HITS[tok].append(now)
+    if rate:
+        now = time.time()
+        HITS[tok] = [t for t in HITS[tok] if now - t < RATE_WINDOW]
+        if len(HITS[tok]) >= RATE_N:
+            raise HTTPException(429, "Too many messages, give it a minute")
+        HITS[tok].append(now)
     return s["client_id"]
 
 
@@ -134,6 +142,27 @@ async def login(req: LoginReq):
     return {"token": tok, "name": c["name"], "advisor": c["advisor"], "since": c["since"]}
 
 
+@app.get("/api/portal")
+async def portal(authorization: str = Header(None)):
+    """Everything the tabs render, for exactly one client."""
+    cid = resolve(authorization, rate=False)
+    c = CLIENTS[cid]
+    return {
+        "name": c["name"], "advisor": c["advisor"], "since": c["since"],
+        "accounts": c["accounts"],
+        "holdings": c["holdings"],
+        "documents": c["documents"],
+        "meetings": c["meetings"],
+        "tax_returns": {str(k): v for k, v in sorted(c["tax_returns"].items(), reverse=True)},
+        "activity": c["activity"],
+        "beneficiaries": c["beneficiaries"],
+        "contributions": {str(k): v for k, v in c["contributions"].items()},
+        "fees": c["fees"],
+        "forms": portal_data.FORMS,
+        "tabs": portal_data.TABS,
+    }
+
+
 @app.post("/api/logout")
 async def logout(authorization: str = Header(None)):
     if authorization and authorization.startswith("Bearer "):
@@ -148,6 +177,27 @@ def sse(obj):
 
 
 THINK = re.compile(r"<think>.*?</think>", re.S)
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*|__(.+?)__", re.S)
+_MD_HEAD = re.compile(r"^#{1,6}\s*", re.M)
+
+
+def _strip_md(t):
+    """The chat bubble renders literal text, so markup must not survive."""
+    t = _MD_BOLD.sub(lambda m: m.group(1) or m.group(2), t)
+    return _MD_HEAD.sub("", t)
+
+
+def _visible(buf, final=False):
+    """Text safe to show now. Holds back an unclosed ** so a bold marker is
+    never emitted and then retracted once its partner arrives."""
+    raw = THINK.sub("", buf)
+    if not final:
+        trail = re.search(r"[*_]+$", raw)
+        if trail:
+            raw = raw[:trail.start()]
+        if raw.count("**") % 2 == 1:
+            raw = raw[:raw.rfind("**")]
+    return _strip_md(raw)
 
 
 @app.post("/api/chat")
@@ -160,10 +210,47 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
             messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": req.message})
 
+    # Router tier. A how-to question is resolved in code before the model runs,
+    # because in testing the model sometimes skipped get_howto and invented
+    # portal steps. Wrong instructions about a financial form are worse than a
+    # slow answer, so this path does not depend on the model choosing correctly.
+    howto_topic = portal_data.match_howto(req.message)
+    howto_intent = bool(portal_data._HOWTO_INTENT.search(req.message or ""))
+
     async def stream():
         t0 = time.time()
         emitted = 0
         try:
+            if howto_topic:
+                result = tools.execute(client_id, "get_howto", {"topic": howto_topic})
+                yield sse({"type": "tool", "name": "get_howto", "args": {"topic": howto_topic}})
+                if isinstance(result.get("open"), dict):
+                    yield sse({"type": "link", **result["open"]})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": "get_howto",
+                                  "arguments": {"topic": howto_topic}}}]})
+                messages.append({"role": "tool", "name": "get_howto",
+                                 "content": json.dumps(result)})
+            elif howto_intent:
+                # Reads like a how-to but matched no topic. Escalate in code: asking
+                # the model to do it produced answers that PROMISED a follow-up
+                # without ever creating one, which is worse than not offering.
+                esc = tools.execute(client_id, "escalate_to_advisor",
+                                    {"topic": req.message[:300]})
+                yield sse({"type": "tool", "name": "escalate_to_advisor",
+                           "args": {"topic": req.message[:120]}})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": "escalate_to_advisor",
+                                  "arguments": {"topic": req.message[:300]}}}]})
+                messages.append({"role": "tool", "name": "escalate_to_advisor",
+                                 "content": json.dumps(esc)})
+                messages.append({"role": "system", "content":
+                    "You have no instructions on file for what the client just asked. You "
+                    "do NOT know the steps, so do not invent them and do not describe any "
+                    "tab, form, or button. It has already been sent to their advisor. Say "
+                    "briefly that you do not have steps for that one and that their advisor "
+                    "will follow up."})
+
             async with httpx.AsyncClient(timeout=180) as http:
                 for hop in range(MAX_HOPS):
                     payload = {
@@ -196,12 +283,17 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                             piece = msg.get("content") or ""
                             if piece:
                                 buf += piece
-                                clean = THINK.sub("", buf)
+                                clean = _visible(buf)
                                 if len(clean) > emitted:
                                     yield sse({"type": "token", "text": clean[emitted:]})
                                     emitted = len(clean)
                             if chunk.get("done"):
                                 break
+                    # flush anything held back by the unclosed-marker guard
+                    clean = _visible(buf, final=True)
+                    if len(clean) > emitted:
+                        yield sse({"type": "token", "text": clean[emitted:]})
+                        emitted = len(clean)
 
                     if not calls:
                         break
@@ -219,6 +311,10 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                                 args = {}
                         yield sse({"type": "tool", "name": name, "args": args})
                         result = tools.execute(client_id, name, args)
+                        # The destination comes from the tool, never from the model,
+                        # so Brooke cannot send a client to a page that does not exist.
+                        if isinstance(result, dict) and isinstance(result.get("open"), dict):
+                            yield sse({"type": "link", **result["open"]})
                         messages.append({"role": "tool", "name": name,
                                          "content": json.dumps(result)})
                     yield sse({"type": "status", "text": "Checking your records"})

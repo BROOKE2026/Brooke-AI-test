@@ -131,3 +131,90 @@ CLIENTS = {
         ],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Extra fixtures for the account questions clients actually ask: recent
+# activity, who the beneficiaries are, how much IRA room is left, what the fee
+# is. Still entirely fictional. Contribution limits here are demo values, not a
+# statement of real IRS limits.
+# ---------------------------------------------------------------------------
+
+_EXTRA = {
+    "CLIENT-001": {
+        "activity": {
+            "ACC-4471": [
+                {"date": "2026-08-14", "type": "Dividend",     "description": "VTI dividend",            "amount":  3_182.00},
+                {"date": "2026-08-01", "type": "Contribution", "description": "Transfer from Chase 4021","amount": 10_000.00},
+                {"date": "2026-07-22", "type": "Buy",          "description": "Bought 34 VTI",           "amount": -10_180.00},
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",    "amount": -2_247.00},
+            ],
+            "ACC-4472": [
+                {"date": "2026-08-10", "type": "Dividend",     "description": "BND dividend",            "amount":  1_094.00},
+                {"date": "2026-06-30", "type": "Fee",          "description": "Advisory fee Q2 2026",    "amount": -1_072.00},
+            ],
+            "ACC-4473": [
+                {"date": "2026-04-02", "type": "Contribution", "description": "2025 Roth contribution",  "amount":  7_000.00},
+            ],
+        },
+        "beneficiaries": {
+            "ACC-4471": [],
+            "ACC-4472": [{"name": "Daniel Whitfield", "relationship": "Spouse", "share": 100, "tier": "Primary"}],
+            "ACC-4473": [{"name": "Daniel Whitfield", "relationship": "Spouse", "share": 100, "tier": "Primary"},
+                         {"name": "Claire Whitfield", "relationship": "Child",  "share": 100, "tier": "Contingent"}],
+        },
+        "contributions": {
+            2026: {"ACC-4472": {"contributed": 0,     "limit": 8_000, "type": "Traditional IRA"},
+                   "ACC-4473": {"contributed": 3_500, "limit": 8_000, "type": "Roth IRA"}},
+        },
+        "fees": {"rate_pct": 0.85, "last_billed": "2026-07-15", "last_amount": 3_319.00, "frequency": "Quarterly"},
+    },
+    "CLIENT-002": {
+        "activity": {
+            "ACC-8812": [
+                {"date": "2026-08-18", "type": "Buy",          "description": "Bought 12 VOO",            "amount": -6_000.00},
+                {"date": "2026-08-01", "type": "Contribution", "description": "Transfer from Ally 8890",  "amount":  6_000.00},
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount":   -728.00},
+            ],
+            "ACC-8813": [
+                {"date": "2026-01-08", "type": "Contribution", "description": "2026 Roth contribution",   "amount":  7_000.00},
+            ],
+        },
+        "beneficiaries": {
+            "ACC-8812": [],
+            "ACC-8813": [{"name": "Rosa Delaney", "relationship": "Parent", "share": 100, "tier": "Primary"}],
+        },
+        "contributions": {
+            2026: {"ACC-8813": {"contributed": 7_000, "limit": 7_000, "type": "Roth IRA"}},
+        },
+        "fees": {"rate_pct": 0.90, "last_billed": "2026-07-15", "last_amount": 1_060.00, "frequency": "Quarterly"},
+    },
+    "CLIENT-003": {
+        "activity": {
+            "ACC-2201": [
+                {"date": "2026-08-20", "type": "Dividend",     "description": "MUB dividend",             "amount":  2_041.00},
+                {"date": "2026-08-05", "type": "Sell",         "description": "Sold 400 VXUS",            "amount": 26_800.00},
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount": -6_398.00},
+            ],
+            "ACC-2202": [
+                {"date": "2026-08-12", "type": "Dividend",     "description": "BND dividend",             "amount":  1_968.00},
+            ],
+            "ACC-2203": [
+                {"date": "2026-06-02", "type": "Grant",        "description": "Grant to Ridgeline Food Bank", "amount": -25_000.00},
+                {"date": "2026-02-11", "type": "Contribution", "description": "Appreciated VTI contribution", "amount": 150_000.00},
+            ],
+        },
+        "beneficiaries": {
+            "ACC-2201": [],
+            "ACC-2202": [{"name": "Miguel Vasquez", "relationship": "Spouse", "share": 100, "tier": "Primary"}],
+            "ACC-2203": [],
+        },
+        "contributions": {
+            2026: {"ACC-2202": {"contributed": 8_000, "limit": 8_000, "type": "Traditional IRA"}},
+        },
+        "fees": {"rate_pct": 0.75, "last_billed": "2026-07-15", "last_amount": 8_998.00, "frequency": "Quarterly"},
+    },
+}
+
+for _cid, _extra in _EXTRA.items():
+    CLIENTS[_cid].update(_extra)

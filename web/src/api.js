@@ -33,6 +33,15 @@ export async function login(passcode) {
   return r.json()
 }
 
+export async function getPortal(token) {
+  const r = await fetch(`${getApiBase()}/api/portal`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (r.status === 401) { const e = new Error('expired'); e.expired = true; throw e }
+  if (!r.ok) throw new Error(`Portal load failed (${r.status})`)
+  return r.json()
+}
+
 export async function logout(token) {
   try {
     await fetch(`${getApiBase()}/api/logout`, {
