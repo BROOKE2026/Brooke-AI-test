@@ -29,6 +29,14 @@ from demo_data import PASSCODES, CLIENTS
 
 OLLAMA   = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL    = os.environ.get("BROOKE_MODEL", "qwen3:14b")
+# Reasoning lane for hard questions. On a 16GB host leave STRONG unset: it
+# reuses the same weights with thinking enabled (zero extra memory). On the
+# Studios point it at a bigger model, e.g. BROOKE_MODEL_STRONG=qwen3:14b.
+STRONG   = os.environ.get("BROOKE_MODEL_STRONG", "")
+# off   = hard questions use the normal lane (right for a 16GB host)
+# think = same weights with thinking enabled (slower, better reasoning)
+# strong= use BROOKE_MODEL_STRONG (Studios)
+HARD_MODE = os.environ.get("BROOKE_HARD_MODE", "off")
 MAX_HOPS = 4                      # tool-call rounds before we force an answer
 RATE_N, RATE_WINDOW = 20, 60      # requests per token per minute
 
@@ -300,6 +308,9 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
     data_hit = None
     if not third_party and not advice and not taxq and not nav_tab and not howto_topic and not howto_intent:
         data_hit = portal_data.match_data_query(req.message, date.today().year)
+    hard = (not third_party and not advice and not taxq and not nav_tab
+            and not howto_topic and not howto_intent and not data_hit
+            and portal_data.is_hard(req.message))
 
     async def stream():
         t0 = time.time()
@@ -415,11 +426,12 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
 
             async with httpx.AsyncClient(timeout=180) as http:
                 for hop in range(MAX_HOPS):
+                    use_strong = hard and HARD_MODE == "strong" and STRONG
                     payload = {
-                        "model": MODEL,
+                        "model": STRONG if use_strong else MODEL,
                         "messages": messages,
                         "stream": True,
-                        "think": False,
+                        "think": bool(hard and HARD_MODE == "think"),
                         "options": {"temperature": 0.3, "num_ctx": 8192},
                     }
                     # Last hop: drop the tools so the model is forced to answer.

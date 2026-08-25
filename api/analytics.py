@@ -30,12 +30,20 @@ def performance(c, years=3):
         cum = 1.0
         for r in per.values():
             cum *= (1 + r / 100.0)
-        rows.append({
+        row = {
             "account_id": a["id"], "type": a["type"], "balance": a["balance"],
             "per_year_pct": per,
             "cumulative_pct": round((cum - 1) * 100, 1) if per else None,
             "ytd_pct": a.get("ytd_return"),
-        })
+        }
+        # Approximate dollar growth, backed out of the current balance and the
+        # cumulative return. Contributions are not separated out, so this is an
+        # estimate, but it makes rate-vs-dollars questions answerable from data:
+        # the highest RETURN and the biggest DOLLAR contributor often differ.
+        if row["cumulative_pct"] is not None:
+            row["approx_growth_dollars"] = round(
+                a["balance"] * (1 - 1 / (cum if cum > 0 else 1)))
+        rows.append(row)
 
     total = sum(a["balance"] for a in c["accounts"]) or 1
     have = [r for r in rows if r["cumulative_pct"] is not None]
@@ -47,8 +55,15 @@ def performance(c, years=3):
         "cumulative_pct": round(sum(r["cumulative_pct"] * r["balance"] for r in have) / total, 1),
         "ytd_pct": round(sum((r["ytd_pct"] or 0) * r["balance"] for r in rows) / total, 1),
     }
+    biggest = max((r for r in rows if r.get("approx_growth_dollars") is not None),
+                  key=lambda r: r["approx_growth_dollars"], default=None)
     return {"years": ys, "accounts": rows, "combined": combined,
-            "note": "Calendar-year account returns, net of fees."}
+            "biggest_dollar_contributor": (
+                {"account_id": biggest["account_id"], "type": biggest["type"],
+                 "approx_growth_dollars": biggest["approx_growth_dollars"]}
+                if biggest else None),
+            "note": ("Calendar-year account returns, net of fees. Dollar growth "
+                     "figures are estimates that do not separate contributions.")}
 
 
 def allocation(c):

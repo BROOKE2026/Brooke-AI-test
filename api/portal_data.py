@@ -336,26 +336,33 @@ def third_party_name(text, client_name):
     return None
 
 
-_NAV_INTENT = re.compile(
-    r"\b(take me to|go to|open (the |my )?|show me (the |my )?|bring me to|navigate to|jump to)\b", re.I)
-
 _TAB_WORDS = {
-    "forms":     ["form", "forms", "paperwork"],
-    "documents": ["document", "documents", "statement", "statements", "files"],
-    "tax":       ["tax", "taxes", "return", "returns"],
-    "meetings":  ["meeting", "meetings", "calendar", "appointment"],
-    "accounts":  ["account", "accounts", "holdings", "portfolio", "balances"],
-    "overview":  ["overview", "dashboard", "home", "summary"],
+    "forms":     ["forms?", "paperwork"],
+    "documents": ["documents?", "statements?", "files"],
+    "tax":       ["tax(?:es)?( page| tab| section)?", "returns? (?:page|tab|section)"],
+    "meetings":  ["meetings?", "calendar", "appointments?"],
+    "accounts":  ["accounts?( page| tab| section)?", "holdings", "portfolio", "balances page"],
+    "overview":  ["overview", "dashboard", "home", "summary page"],
+}
+
+# The navigation verb must bind DIRECTLY to a portal section. A bare "open"
+# anywhere in a sentence used to match, which auto-navigated a client who said
+# "if I wanted to open another account". Verb and destination now travel
+# together or not at all.
+_NAV_RES = {
+    tab: re.compile(
+        r"\b(?:take me to|go to|bring me to|navigate to|jump to|open|show me|pull up)\s+"
+        r"(?:the\s+|my\s+)?(?:%s)\b" % "|".join(words), re.I)
+    for tab, words in _TAB_WORDS.items()
 }
 
 
 def match_navigation(text):
-    """Return a tab when the client is plainly asking to be taken somewhere."""
-    if not text or not _NAV_INTENT.search(text):
+    """Return a tab only when a navigation verb binds directly to a section."""
+    if not text:
         return None
-    low = text.lower()
-    for tab, words in _TAB_WORDS.items():
-        if any(re.search(r"\b%s\b" % w, low) for w in words):
+    for tab, rx in _NAV_RES.items():
+        if rx.search(text):
             return tab
     return None
 
@@ -427,3 +434,22 @@ _TAX_TOPICS = re.compile(
 
 def tax_topic(text):
     return bool(text and _TAX_TOPICS.search(text))
+
+
+# ---------------------------------------------------------------------------
+# Hard-question detector. Only consulted for messages that reached the model
+# path (every routed question is already answered without a model). Hard ones
+# get the reasoning lane: same weights with thinking enabled, or a stronger
+# model where the hardware allows one (BROOKE_MODEL_STRONG on the Studios).
+# ---------------------------------------------------------------------------
+
+_HARD = re.compile(
+    r"\b(compare|comparison|versus|vs\.?|explain why|walk me through|break ?down|"
+    r"what if|scenario|project(ion)?|trade[- ]?offs?|contributed most|"
+    r"biggest (driver|contributor)|difference between|pros and cons)\b", re.I)
+
+
+def is_hard(text):
+    if not text:
+        return False
+    return bool(_HARD.search(text)) or len(text) > 220 or text.count("?") > 1
