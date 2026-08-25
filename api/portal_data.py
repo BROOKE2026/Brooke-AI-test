@@ -328,3 +328,51 @@ def match_navigation(text):
         if any(re.search(r"\b%s\b" % w, low) for w in words):
             return tab
     return None
+
+
+# ---------------------------------------------------------------------------
+# Advice intent and large amounts.
+#
+# "How am I doing?" and "Is my cash allocation normal?" are evaluative, which at
+# an RIA is advice. They also exposed a separate failure: the model replied "let
+# me check your balances" and then called nothing, dead-ending the conversation.
+# Routing them to a human fixes both.
+# ---------------------------------------------------------------------------
+
+_ADVICE = re.compile(
+    r"\b(how am i doing|am i (on track|doing (ok|okay|well|alright|fine))|"
+    r"should i\b|do you (think|recommend|suggest)|would you (recommend|suggest)|"
+    r"what do you think|is it (a )?good (idea|time)|am i (over|under)\s?\w*|"
+    r"is (my|the|this|that)\b[^?]{0,40}\b(normal|ok|okay|good|bad|right|reasonable|"
+    r"healthy|aggressive|conservative|too (high|low|much|little|risky))|"
+    r"too (much|little) (cash|risk|bonds|stock)|better off|worth it|"
+    r"\bdiversified\b|\brebalanc)", re.I)
+
+_MONEY = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)\s*(k\b|thousand|m\b|million)?"
+                    r"|\b([\d,]+(?:\.\d+)?)\s*(k\b|thousand|m\b|million)\b", re.I)
+
+LARGE_AMOUNT = 25_000
+
+
+def advice_intent(text):
+    return bool(text and _ADVICE.search(text))
+
+
+def large_amount(text):
+    """Return a dollar figure at or above LARGE_AMOUNT mentioned in the text."""
+    if not text:
+        return None
+    for m in _MONEY.finditer(text):
+        raw = m.group(1) or m.group(3)
+        unit = (m.group(2) or m.group(4) or "").lower()
+        try:
+            val = float(raw.replace(",", ""))
+        except (ValueError, AttributeError):
+            continue
+        if unit.startswith("k") or unit.startswith("thousand"):
+            val *= 1_000
+        elif unit.startswith("m"):
+            val *= 1_000_000
+        if val >= LARGE_AMOUNT:
+            return val
+    return None

@@ -245,3 +245,9 @@ body{
   .chatpanel{position:fixed;inset:0;width:auto;z-index:40;border-left:0}
   .main{padding:20px 16px 50px}
 }
+
+.steps{border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--panel2)}
+.steps strong{display:block;font-size:13px;margin-bottom:8px}
+.steps ol{margin:0;padding-left:19px;display:flex;flex-direction:column;gap:6px}
+.steps li{font-size:13.5px;line-height:1.45}
+.steps-note{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.45}

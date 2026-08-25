@@ -43,10 +43,11 @@ HOW YOU WORK
 - Every number you state about this client must come from a tool call you just made. If you have not called a tool, you do not know the figure. Never estimate, recall, or infer a client's numbers.
 - Call tools before answering questions about tax returns, accounts, holdings, activity, beneficiaries, contribution room, fees, documents, or meetings. Do not ask permission first, just retrieve it.
 - If a tool returns an error or no data, say so plainly and say what is available instead.
+- If you have no tool for what they asked, say you do not have it and that {advisor} can help. Never direct them to the IRS, a bank, a tax professional, or any other outside party. You do not know what they should contact, and sending them elsewhere is not your call.
 
 HELPING THEM DO THINGS
 - When they ask how to do something, where something is, or how to fill in a form, call get_howto. When they just want to be taken somewhere, call navigate_to.
-- Give the steps FIRST as a short list in plain text, one line each, each starting with "- ". Then close with one short sentence pointing at the button, such as "The button below takes you straight there."
+- When instructions are retrieved, the steps and a button are rendered for the client automatically. Do not retype them. Write one short sentence introducing them and stop.
 - A button to the right page is added under your message automatically. Never write a URL, never write a markdown link, and never say "click here". Do not mention the button before the steps.
 - If a task needs a number you can look up, look it up first. For a contribution question, check their remaining room with get_contribution_room before you send them to the form.
 
@@ -220,16 +221,20 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
     # the model narrating THIS client's figures under someone else's name.
     third_party = portal_data.third_party_name(req.message, CLIENTS[client_id]["name"])
 
-    nav_tab = None if third_party else portal_data.match_navigation(req.message)
+    # Evaluative questions are advice at an RIA, and they were also the ones the
+    # model dead-ended on ("let me check your balances" then no tool call).
+    advice = not third_party and portal_data.advice_intent(req.message)
+    big = portal_data.large_amount(req.message)
+    nav_tab = None if third_party or advice else portal_data.match_navigation(req.message)
     howto_topic = portal_data.match_howto(req.message)
     howto_intent = bool(portal_data._HOWTO_INTENT.search(req.message or ""))
     # Unambiguous lookups skip the model's tool-choosing round trip entirely,
     # which is roughly half the latency on a plain question.
-    if third_party:
-        howto_topic = None
-        howto_intent = False
+    if third_party or advice:
+        howto_topic = None if third_party else howto_topic
+        howto_intent = False if third_party else howto_intent
     data_hit = None
-    if not third_party and not nav_tab and not howto_topic and not howto_intent:
+    if not third_party and not advice and not nav_tab and not howto_topic and not howto_intent:
         data_hit = portal_data.match_data_query(req.message, date.today().year)
 
     async def stream():
@@ -245,7 +250,24 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 yield sse({"type": "done", "ms": int((time.time() - t0) * 1000)})
                 return
 
-            if nav_tab:
+            if advice:
+                esc = tools.execute(client_id, "escalate_to_advisor",
+                                    {"topic": req.message[:300]})
+                yield sse({"type": "tool", "name": "escalate_to_advisor",
+                           "args": {"topic": req.message[:120]}})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": "escalate_to_advisor",
+                                  "arguments": {"topic": req.message[:300]}}}]})
+                messages.append({"role": "tool", "name": "escalate_to_advisor",
+                                 "content": json.dumps(esc)})
+                messages.append({"role": "system", "content":
+                    "This is an evaluative question, which is advice. You must NOT answer "
+                    "it, must NOT look anything up, and must NOT say you are about to check "
+                    "something. It has already been sent to their advisor. Reply in two "
+                    "sentences: that this is one for their advisor, and that it has been "
+                    "passed on."})
+
+            elif nav_tab:
                 result = tools.execute(client_id, "navigate_to", {"tab": nav_tab})
                 yield sse({"type": "tool", "name": "navigate_to", "args": {"tab": nav_tab}})
                 if isinstance(result.get("open"), dict):
@@ -258,13 +280,37 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
             elif howto_topic:
                 result = tools.execute(client_id, "get_howto", {"topic": howto_topic})
                 yield sse({"type": "tool", "name": "get_howto", "args": {"topic": howto_topic}})
+                # Steps are fixed data, so they are sent verbatim rather than
+                # retyped by the model, which shortened or dropped them whenever
+                # it had a second tool result to juggle.
+                if result.get("steps"):
+                    yield sse({"type": "steps", "title": result.get("title"),
+                               "steps": result["steps"], "note": result.get("note")})
                 if isinstance(result.get("open"), dict):
                     yield sse({"type": "link", **result["open"]})
                 messages.append({"role": "assistant", "content": "", "tool_calls": [
                     {"function": {"name": "get_howto",
                                   "arguments": {"topic": howto_topic}}}]})
+                messages.append({"role": "system", "content":
+                    "The steps and the button are already displayed to the client. Do NOT "
+                    "repeat them, do not list them, do not describe them. Write ONE short "
+                    "sentence introducing them, such as \"Here is how to do that.\""})
                 messages.append({"role": "tool", "name": "get_howto",
                                  "content": json.dumps(result)})
+                if big and howto_topic in ("withdrawal", "contribution"):
+                    esc = tools.execute(client_id, "escalate_to_advisor",
+                                        {"topic": "Large amount (%s): %s" % (big, req.message[:200])})
+                    yield sse({"type": "tool", "name": "escalate_to_advisor",
+                               "args": {"topic": "large amount"}})
+                    messages.append({"role": "tool", "name": "escalate_to_advisor",
+                                     "content": json.dumps(esc)})
+                    messages.append({"role": "system", "content":
+                        "A large sum is involved so this was also sent to their advisor. "
+                        "Your reply must still contain ALL of the get_howto steps, one per "
+                        "line starting with '- ', exactly as before. Do not shorten or omit "
+                        "The steps are already shown. Write one short sentence introducing "
+                        "them, then one more saying you have looped in their advisor given "
+                        "the amount. Two sentences total, no lists."})
             elif data_hit:
                 dname, dargs = data_hit
                 result = tools.execute(client_id, dname, dargs)

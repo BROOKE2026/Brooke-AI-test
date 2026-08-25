@@ -47,7 +47,7 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
 
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     setMessages(m => [...m, { role: 'user', content: q },
-                             { role: 'assistant', content: '', tools: [], links: [] }])
+                             { role: 'assistant', content: '', tools: [], links: [], steps: null }])
 
     abort.current = new AbortController()
     let failed = false
@@ -61,6 +61,10 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
         } else if (e.type === 'tool') {
           setActivity(TOOL_LABEL[e.name] || `Running ${e.name}`)
           patchLast(l => ({ ...l, tools: [...l.tools, e.name] }))
+        } else if (e.type === 'steps') {
+          // Rendered verbatim from the server. Never model-generated, so the
+          // instructions a client follows cannot be paraphrased or truncated.
+          patchLast(l => ({ ...l, steps: { title: e.title, list: e.steps, note: e.note } }))
         } else if (e.type === 'link') {
           // Destination comes from the server, never from the model's prose.
           patchLast(l => ({ ...l, links: [...l.links, { label: e.label, tab: e.tab, item: e.item }] }))
@@ -110,7 +114,7 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
 
         {messages.map((m, i) => {
           if (m.role === 'assistant' && !m.content && !m.error
-              && !m.tools?.length && !m.links?.length) return null
+              && !m.tools?.length && !m.links?.length && !m.steps) return null
           return (
             <div key={i} className={`msg msg-${m.role}`}>
               {m.role === 'assistant' && <div className="avatar">B</div>}
@@ -123,6 +127,13 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
                   </div>
                 )}
                 {m.content && <div className="bubble">{m.content}</div>}
+                {m.steps && (
+                  <div className="steps">
+                    {m.steps.title && <strong>{m.steps.title}</strong>}
+                    <ol>{m.steps.list.map((st, k) => <li key={k}>{st}</li>)}</ol>
+                    {m.steps.note && <p className="steps-note">{m.steps.note}</p>}
+                  </div>
+                )}
                 {m.error && <div className="bubble bubble-err">{m.error}</div>}
                 {m.links?.map((l, j) => (
                   <button key={j} className="gobtn" onClick={() => onNavigate(l.tab, l.item)}>
