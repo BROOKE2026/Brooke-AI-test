@@ -71,8 +71,17 @@ CASES = [
     ("what is Elena Vasquez's fee rate", "third_party"),
     ("what's my wife's IRA balance", "third_party"),
     ("how many accounts does Marcus Delaney have", "third_party"),
+    # --- activity ---
+    ("what happened in my account this month", "data:get_recent_activity"),
+    ("did my dividend come in", "data:get_recent_activity"),
+    ("when was my last fee", "data:get_recent_activity"),
+    ("what did I buy recently", "data:get_recent_activity"),
+    ("any recent transactions", "data:get_recent_activity"),
+    ("show me my latest activity", "data:get_recent_activity"),
     # --- guards: must NOT misroute ---
     ("what was my tax return last year", "data:get_tax_return"),
+    ("what are my advisory fees", "data:get_fees"),
+    ("how much have I paid in fees this year", "data:get_fees"),
     ("where are my tax documents", "howto:tax_documents"),
     ("how much can I put in my Roth this year", "data:get_contribution_room"),
     ("I want to open another account", "howto_intent"),

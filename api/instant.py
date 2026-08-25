@@ -133,12 +133,32 @@ def _alloc(args, r, c):
     return "Across all accounts your {} total is invested as: {}.".format(_money(r["total"]), parts)
 
 
+def _activity(args, r, c):
+    label = (r.get("filter_type") or "").lower()
+    period = r.get("filter_month") or ""
+    if not r["activity"]:
+        what = (label + " activity") if label else "activity"
+        when = " in " + period if period else " recently"
+        return "I do not see any {}{} across your accounts.".format(what, when)
+    lines = ["Here is your recent {}activity, newest first:".format(
+        (label + " ") if label else ""), ""]
+    for e in r["activity"]:
+        amt = ("+" if e["amount"] >= 0 else "-") + "${:,.2f}".format(abs(e["amount"]))
+        lines.append("- {} · {} ({}) · {} · {}".format(
+            _day(e["date"]), e["account_type"], e["account_id"], e["description"], amt))
+    if r["count"] > len(r["activity"]):
+        lines += ["", "That is the latest {} of {} entries. The Accounts tab has the full history.".format(
+            len(r["activity"]), r["count"])]
+    return "\n".join(lines)
+
+
 def _navigate(args, r, c):
     return "Taking you there now. The button below will bring you back to it any time."
 
 
 _RENDERERS = {
     "navigate_to": _navigate,
+    "get_recent_activity": _activity,
     "get_accounts": _accounts,
     "get_tax_return": _tax,
     "get_fees": _fees,

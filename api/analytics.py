@@ -90,3 +90,34 @@ def fees_paid(c, year=None):
                 by_acct[acct] = by_acct.get(acct, 0) + amt
                 total += amt
     return {"year": year, "total_paid": round(total, 2), "by_account": by_acct}
+
+
+TYPE_WORDS = {
+    "dividend": "Dividend", "dividends": "Dividend",
+    "fee": "Fee", "fees": "Fee",
+    "buy": "Buy", "bought": "Buy", "purchase": "Buy", "purchases": "Buy",
+    "sell": "Sell", "sold": "Sell", "sale": "Sell",
+    "contribution": "Contribution", "contributions": "Contribution",
+    "withdrawal": "Withdrawal", "withdrawals": "Withdrawal",
+    "grant": "Grant", "grants": "Grant",
+}
+
+
+def recent_activity(c, type_=None, month=None, limit=8):
+    """Transactions across every account, newest first, optionally filtered by
+    canonical type and/or a YYYY-MM month."""
+    acct_type = {a["id"]: a["type"] for a in c["accounts"]}
+    rows = []
+    for acct, entries in c.get("activity", {}).items():
+        for e in entries:
+            if type_ and e["type"] != type_:
+                continue
+            if month and not e["date"].startswith(month):
+                continue
+            rows.append({"date": e["date"], "account_id": acct,
+                         "account_type": acct_type.get(acct, ""),
+                         "type": e["type"], "description": e["description"],
+                         "amount": e["amount"]})
+    rows.sort(key=lambda r: r["date"], reverse=True)
+    return {"filter_type": type_, "filter_month": month,
+            "count": len(rows), "activity": rows[:limit]}

@@ -141,6 +141,25 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_recent_activity",
+            "description": (
+                "Recent transactions across ALL of the client's accounts, newest first: "
+                "dividends, fees, buys, sells, contributions, withdrawals. Optional filters."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string",
+                             "description": "One of Dividend, Fee, Buy, Sell, Contribution, Withdrawal, Grant"},
+                    "month": {"type": "string", "description": "YYYY-MM, e.g. 2026-08"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_howto",
             "description": (
                 "Get step by step instructions for doing something in the portal, plus a button "
@@ -314,6 +333,12 @@ def get_allocation(client_id):
     return analytics.allocation(_client(client_id))
 
 
+def get_recent_activity(client_id, type=None, month=None):
+    c = _client(client_id)
+    canonical = analytics.TYPE_WORDS.get(str(type).lower(), type) if type else None
+    return analytics.recent_activity(c, canonical, month)
+
+
 def get_howto(client_id, topic=None):
     _client(client_id)
     h = HOWTOS.get(topic)
@@ -342,6 +367,7 @@ REGISTRY = {
     "get_fees":              get_fees,
     "get_performance":       get_performance,
     "get_allocation":        get_allocation,
+    "get_recent_activity":   get_recent_activity,
     "get_howto":             get_howto,
     "navigate_to":           navigate_to,
     "escalate_to_advisor": escalate_to_advisor,

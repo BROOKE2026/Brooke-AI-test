@@ -177,6 +177,7 @@ _EXTRA = {
                 {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount":   -728.00},
             ],
             "ACC-8813": [
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount":   -332.00},
                 {"date": "2026-01-08", "type": "Contribution", "description": "2026 Roth contribution",   "amount":  7_000.00},
             ],
         },
@@ -198,8 +199,10 @@ _EXTRA = {
             ],
             "ACC-2202": [
                 {"date": "2026-08-12", "type": "Dividend",     "description": "BND dividend",             "amount":  1_968.00},
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount": -2_067.00},
             ],
             "ACC-2203": [
+                {"date": "2026-07-15", "type": "Fee",          "description": "Advisory fee Q2 2026",     "amount":   -533.00},
                 {"date": "2026-06-02", "type": "Grant",        "description": "Grant to Ridgeline Food Bank", "amount": -25_000.00},
                 {"date": "2026-02-11", "type": "Contribution", "description": "Appreciated VTI contribution", "amount": 150_000.00},
             ],

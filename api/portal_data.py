@@ -170,6 +170,7 @@ HOWTOS = {
 # ---------------------------------------------------------------------------
 
 import re
+from datetime import date as _date
 
 _HOWTO_INTENT = re.compile(
     r"\b(how (do|would|can|to)|where (do|is|can|are)|what.{0,12}steps|walk me through|"
@@ -240,7 +241,17 @@ def _parse_year_window(low):
     return 3
 
 
+_ACTIVITY_TYPE = re.compile(
+    r"\b(dividends?|fees?|bought|buy|purchases?|sold|sell|sales?|contributions?|withdrawals?|grants?)\b", re.I)
+
+
 _DATA_PATTERNS = [
+    ("get_recent_activity",   [r"\b(last|latest|recent|newest)\b.{0,18}\b(fee|dividend|transaction|trade|purchase|buy|sell|withdrawal|contribution)",
+                               r"\b(fee|dividend|transaction)s?\b.{0,22}\b(come in|came in|come out|came out|posted|hit|land(ed)?)",
+                               r"\bwhat happened\b.{0,24}\b(accounts?|money|portfolio)",
+                               r"\b(recent|latest) (activity|transactions?)\b",
+                               r"\bany (new |recent )?(activity|transactions?)\b",
+                               r"\bwhat did i (buy|sell|purchase)\b"]),
     ("get_performance",       [r"(?<!tax )\breturns?\b", r"\bperformance\b",
                                r"\bam i up\b", r"\bhow much am i up\b",
                                r"\b(investments?|portfolio|money|accounts?).{0,14}\b(make|made|earn|earned)\b",
@@ -288,6 +299,18 @@ def match_data_query(text, this_year):
     for tool, pats in _DATA_PATTERNS:
         if not any(re.search(p, low) for p in pats):
             continue
+        if tool == "get_recent_activity":
+            args = {}
+            m = _ACTIVITY_TYPE.search(low)
+            if m:
+                args["type"] = m.group(1)
+            t = _date.today()
+            if "this month" in low:
+                args["month"] = "%04d-%02d" % (t.year, t.month)
+            elif "last month" in low:
+                y, mth = (t.year, t.month - 1) if t.month > 1 else (t.year - 1, 12)
+                args["month"] = "%04d-%02d" % (y, mth)
+            return tool, args
         if tool == "get_performance":
             # "tax return" must never land here
             if re.search(r"\btax\b", low):
