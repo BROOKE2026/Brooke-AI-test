@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { chat } from './api.js'
+import { chat, bookMeeting } from './api.js'
 
 const TOOL_LABEL = {
+  get_performance:       'Calculating your returns',
+  get_allocation:        'Reading your asset mix',
   get_tax_return:        'Looking up your tax return',
   get_accounts:          'Pulling your account balances',
   get_holdings:          'Reading your holdings',
@@ -23,7 +25,7 @@ const STARTERS = [
   'Where do I download my statement?',
 ]
 
-export default function Chat({ session, onExpired, onNavigate, onClose }) {
+export default function Chat({ session, onExpired, onNavigate, onClose, onRefreshData }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -47,7 +49,7 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
 
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     setMessages(m => [...m, { role: 'user', content: q },
-                             { role: 'assistant', content: '', tools: [], links: [], steps: null }])
+                             { role: 'assistant', content: '', tools: [], links: [], steps: null, schedule: null }])
 
     abort.current = new AbortController()
     let failed = false
@@ -61,6 +63,8 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
         } else if (e.type === 'tool') {
           setActivity(TOOL_LABEL[e.name] || `Running ${e.name}`)
           patchLast(l => ({ ...l, tools: [...l.tools, e.name] }))
+        } else if (e.type === 'schedule') {
+          patchLast(l => ({ ...l, schedule: { ...e, booked: null, busy: false } }))
         } else if (e.type === 'steps') {
           // Rendered verbatim from the server. Never model-generated, so the
           // instructions a client follows cannot be paraphrased or truncated.
@@ -85,6 +89,37 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
     if (!failed) patchLast(l => l.content ? l : { ...l, error: 'No response from the model.' })
     setBusy(false); setActivity(null)
   }, [draft, busy, messages, session, onExpired])
+
+  const book = async (i, slot) => {
+    setMessages(ms => {
+      const c = [...ms]; const m = { ...c[i] }
+      m.schedule = { ...m.schedule, busy: true }; c[i] = m; return c
+    })
+    try {
+      const res = await bookMeeting(session.token, {
+        topic: messages[i]?.schedule?.topic || '',
+        advisor_type: messages[i]?.schedule?.advisor_type || 'advisor',
+        date: slot?.date || '', time: slot?.time || '',
+      })
+      setMessages(ms => {
+        const c = [...ms]; const m = { ...c[i] }
+        m.schedule = { ...m.schedule, busy: false, booked: res }; c[i] = m; return c
+      })
+      onRefreshData?.()
+    } catch (err) {
+      setMessages(ms => {
+        const c = [...ms]; const m = { ...c[i] }
+        m.schedule = { ...m.schedule, busy: false, error: err.message }; c[i] = m; return c
+      })
+    }
+  }
+
+  const downloadIcs = (ics, name) => {
+    const blob = new Blob([ics], { type: 'text/calendar' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = name || 'brookhaven-call.ics'
+    a.click(); URL.revokeObjectURL(a.href)
+  }
 
   const onKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
@@ -114,7 +149,7 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
 
         {messages.map((m, i) => {
           if (m.role === 'assistant' && !m.content && !m.error
-              && !m.tools?.length && !m.links?.length && !m.steps) return null
+              && !m.tools?.length && !m.links?.length && !m.steps && !m.schedule) return null
           return (
             <div key={i} className={`msg msg-${m.role}`}>
               {m.role === 'assistant' && <div className="avatar">B</div>}
@@ -135,6 +170,38 @@ export default function Chat({ session, onExpired, onNavigate, onClose }) {
                   </div>
                 )}
                 {m.error && <div className="bubble bubble-err">{m.error}</div>}
+                {m.schedule && !m.schedule.booked && (
+                  <div className="sched">
+                    <strong>Schedule a call with {m.schedule.who}</strong>
+                    <div className="sched-slots">
+                      {m.schedule.slots?.map((sl, k) => (
+                        <button key={k} className="starter" disabled={m.schedule.busy}
+                                onClick={() => book(i, sl)}>{sl.label}</button>
+                      ))}
+                      <button className="starter" disabled={m.schedule.busy}
+                              onClick={() => book(i, null)}>Flexible, have the office call me</button>
+                    </div>
+                    {m.schedule.error && <div className="note note-bad">{m.schedule.error}</div>}
+                  </div>
+                )}
+                {m.schedule?.booked && (
+                  <div className="sched">
+                    <strong>Request sent</strong>
+                    <p className="sched-note">
+                      {m.schedule.booked.meeting.type}
+                      {m.schedule.booked.meeting.date !== 'TBD'
+                        ? `, ${m.schedule.booked.meeting.date} at ${m.schedule.booked.meeting.time}`
+                        : ', the office will call to find a time'}
+                      . {m.schedule.booked.note}
+                    </p>
+                    {m.schedule.booked.ics && (
+                      <button className="gobtn sm"
+                              onClick={() => downloadIcs(m.schedule.booked.ics)}>
+                        Add to my calendar (.ics)
+                      </button>
+                    )}
+                  </div>
+                )}
                 {m.links?.map((l, j) => (
                   <button key={j} className="gobtn" onClick={() => onNavigate(l.tab, l.item)}>
                     {l.label} <span className="arrow">→</span>

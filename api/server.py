@@ -12,8 +12,8 @@ On the real build the model host is the Mac Studio pool on a private LAN.
 DEMO ONLY: passcode auth, in-memory sessions, fictional data.
 """
 
-import os, json, time, secrets, asyncio, re
-from datetime import date
+import os, json, time, secrets, asyncio, re, uuid
+from datetime import date, timedelta
 from collections import defaultdict
 
 import httpx
@@ -167,6 +167,32 @@ async def portal(authorization: str = Header(None)):
     }
 
 
+class MeetingReq(BaseModel):
+    topic: str = ""
+    advisor_type: str = "advisor"
+    date: str = ""
+    time: str = ""
+
+
+@app.post("/api/meeting_request")
+async def meeting_request(req: MeetingReq, authorization: str = Header(None)):
+    cid = resolve(authorization, rate=False)
+    c = CLIENTS[cid]
+    open_reqs = [m for m in c["meetings"] if m.get("status") == "requested"]
+    if len(open_reqs) >= 3:
+        raise HTTPException(429, "You already have 3 open meeting requests. "
+                                 "The office will be in touch about those first.")
+    kind = "Tax Planning Call" if req.advisor_type == "tax" else "Advisor Call"
+    meeting = {"date": req.date or "TBD",
+               "time": req.time or "flexible",
+               "type": kind, "status": "requested",
+               "topic": req.topic[:140]}
+    c["meetings"].insert(0, meeting)
+    ics = build_ics(kind, req.topic, req.date, req.time) if req.date and req.time else None
+    return {"ok": True, "meeting": meeting, "ics": ics,
+            "note": "The office confirms requests within one business day."}
+
+
 @app.post("/api/logout")
 async def logout(authorization: str = Header(None)):
     if authorization and authorization.startswith("Bearer "):
@@ -178,6 +204,41 @@ async def logout(authorization: str = Header(None)):
 
 def sse(obj):
     return f"data: {json.dumps(obj)}\n\n"
+
+
+def proposed_slots(n=3):
+    """Next n weekdays, alternating morning and afternoon."""
+    out, d, i = [], date.today(), 0
+    while len(out) < n:
+        d += timedelta(days=1)
+        if d.weekday() >= 5:
+            continue
+        t = "10:00 AM" if i % 2 == 0 else "2:00 PM"
+        out.append({"date": d.isoformat(), "time": t,
+                    "label": d.strftime("%A, %B %-d") + " at " + t})
+        i += 1
+    return out
+
+
+def build_ics(kind, topic, iso_date, time_str):
+    try:
+        hour = int(time_str.split(":")[0])
+        if "PM" in time_str.upper() and hour != 12:
+            hour += 12
+        start = iso_date.replace("-", "") + "T%02d0000" % hour
+        endh = "T%02d3000" % hour
+        end = iso_date.replace("-", "") + endh
+    except Exception:
+        return None
+    return "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BrookHaven//Brooke//EN",
+        "BEGIN:VEVENT",
+        "UID:" + uuid.uuid4().hex + "@brookhaven.us",
+        "DTSTART:" + start, "DTEND:" + end,
+        "SUMMARY:BrookHaven " + kind,
+        "DESCRIPTION:" + (topic or "").replace("\n", " ")[:180],
+        "STATUS:TENTATIVE",
+        "END:VEVENT", "END:VCALENDAR", ""])
 
 
 THINK = re.compile(r"<think>.*?</think>", re.S)
@@ -226,17 +287,18 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
     # Evaluative questions are advice at an RIA, and they were also the ones the
     # model dead-ended on ("let me check your balances" then no tool call).
     advice = not third_party and portal_data.advice_intent(req.message)
+    taxq = not third_party and portal_data.tax_topic(req.message)
     big = portal_data.large_amount(req.message)
     nav_tab = None if third_party or advice else portal_data.match_navigation(req.message)
     howto_topic = portal_data.match_howto(req.message)
     howto_intent = bool(portal_data._HOWTO_INTENT.search(req.message or ""))
     # Unambiguous lookups skip the model's tool-choosing round trip entirely,
     # which is roughly half the latency on a plain question.
-    if third_party or advice:
+    if third_party or advice or taxq:
         howto_topic = None if third_party else howto_topic
         howto_intent = False if third_party else howto_intent
     data_hit = None
-    if not third_party and not advice and not nav_tab and not howto_topic and not howto_intent:
+    if not third_party and not advice and not taxq and not nav_tab and not howto_topic and not howto_intent:
         data_hit = portal_data.match_data_query(req.message, date.today().year)
 
     async def stream():
@@ -252,22 +314,24 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 yield sse({"type": "done", "ms": int((time.time() - t0) * 1000)})
                 return
 
-            if advice:
-                esc = tools.execute(client_id, "escalate_to_advisor",
-                                    {"topic": req.message[:300]})
+            if advice or taxq:
+                kind = "tax" if taxq else "advisor"
+                who = "your BrookHaven tax team" if taxq else CLIENTS[client_id]["advisor"]
+                tools.execute(client_id, "escalate_to_advisor",
+                              {"topic": ("TAX: " if taxq else "") + req.message[:280]})
                 yield sse({"type": "tool", "name": "escalate_to_advisor",
                            "args": {"topic": req.message[:120]}})
-                messages.append({"role": "assistant", "content": "", "tool_calls": [
-                    {"function": {"name": "escalate_to_advisor",
-                                  "arguments": {"topic": req.message[:300]}}}]})
-                messages.append({"role": "tool", "name": "escalate_to_advisor",
-                                 "content": json.dumps(esc)})
-                messages.append({"role": "system", "content":
-                    "This is an evaluative question, which is advice. You must NOT answer "
-                    "it, must NOT look anything up, and must NOT say you are about to check "
-                    "something. It has already been sent to their advisor. Reply in two "
-                    "sentences: that this is one for their advisor, and that it has been "
-                    "passed on."})
+                what = "tax planning" if taxq else "investment"
+                yield sse({"type": "token", "text":
+                    ("That one crosses into %s advice, and I am just the assistant here, "
+                     "so I will not weigh in. I have passed your question to %s so it is "
+                     "already on their radar. Would you like to schedule a call? Pick a "
+                     "time below and I will put the request in.") % (what, who)})
+                yield sse({"type": "schedule", "advisor_type": kind, "who": who,
+                           "topic": req.message[:140], "slots": proposed_slots()})
+                yield sse({"type": "done", "ms": int((time.time() - t0) * 1000),
+                           "instant": True})
+                return
 
             elif nav_tab:
                 result = tools.execute(client_id, "navigate_to", {"tab": nav_tab})

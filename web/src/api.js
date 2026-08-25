@@ -83,6 +83,16 @@ export async function getPortal(token) {
   return r.json()
 }
 
+export async function bookMeeting(token, payload) {
+  const r = await fetch(`${getApiBase()}/api/meeting_request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`Request failed (${r.status})`)
+  return r.json()
+}
+
 export async function logout(token) {
   try {
     await fetch(`${getApiBase()}/api/logout`, {

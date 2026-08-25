@@ -98,7 +98,8 @@ export default function App() {
         </main>
         {chatOpen && (
           <Chat session={session} onExpired={() => save(null)}
-                onNavigate={navigate} onClose={() => setChatOpen(false)} />
+                onNavigate={navigate} onClose={() => setChatOpen(false)}
+                onRefreshData={() => getPortal(session.token).then(setData).catch(() => {})} />
         )}
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}

@@ -194,10 +194,24 @@ function Tax({ data }) {
 
 function Meetings({ data }) {
   const up = data.meetings.filter(m => m.status === 'upcoming')
-  const past = data.meetings.filter(m => m.status !== 'upcoming')
+  const req = data.meetings.filter(m => m.status === 'requested')
+  const past = data.meetings.filter(m => m.status !== 'upcoming' && m.status !== 'requested')
   return (
     <>
       <h1>Meetings</h1>
+      {req.length > 0 && <>
+        <h2>Requested</h2>
+        {req.map((m, i) => (
+          <div key={'r' + i} className="rowcard">
+            <div><strong>{m.type}</strong>
+              <span className="tile-s">
+                {m.date !== 'TBD' ? `${m.date} at ${m.time}` : 'Office will call to find a time'}
+                {m.topic ? ` · ${m.topic}` : ''}
+              </span></div>
+            <span className="tag warn-tag">Requested</span>
+          </div>
+        ))}
+      </>}
       <h2>Upcoming</h2>
       {up.length === 0 ? <p className="muted">Nothing scheduled.</p> : up.map((m, i) => (
         <div key={i} className="rowcard">

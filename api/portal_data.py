@@ -406,3 +406,24 @@ def large_amount(text):
         if val >= LARGE_AMOUNT:
             return val
     return None
+
+
+# ---------------------------------------------------------------------------
+# Tax planning and strategy topics. These are advice regardless of phrasing,
+# and the right move is a call with the tax team, offered immediately.
+# ---------------------------------------------------------------------------
+
+_TAX_TOPICS = re.compile(
+    r"\broth conversion\b|\bbackdoor\b|\btax[- ]loss\b|\bharvest(?:ing)?\b|"
+    r"\bdeduct(?:ion|ions|ible)?\b|\bwrite[- ]?offs?\b|"
+    r"\bestimated (?:tax )?payments?\b|\bquarterly (?:taxes|payments)\b|"
+    r"\btax (?:plan|planning|strategy|strategies|projection|bill|situation)\b|"
+    r"\b(?:lower|reduce|cut|minimi[sz]e)\b.{0,16}\btax(?:es)?\b|"
+    r"\brmds?\b|\brequired minimum\b|\bcapital gains (?:tax|strategy)\b|"
+    r"\b1031\b|\bcharitable\b.{0,24}\btax\b|\btax\b.{0,24}\bcharitable\b",
+    re.I,
+)
+
+
+def tax_topic(text):
+    return bool(text and _TAX_TOPICS.search(text))
