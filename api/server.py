@@ -38,7 +38,7 @@ STRONG   = os.environ.get("BROOKE_MODEL_STRONG", "")
 # strong= use BROOKE_MODEL_STRONG (Studios)
 HARD_MODE = os.environ.get("BROOKE_HARD_MODE", "off")
 MAX_HOPS = 4                      # tool-call rounds before we force an answer
-RATE_N, RATE_WINDOW = 20, 60      # requests per token per minute
+RATE_N, RATE_WINDOW = 30, 60      # requests per token per minute; instant answers make rapid messaging normal
 
 SYSTEM_PROMPT = """You are Brooke, the client assistant for BrookHaven.
 
@@ -442,7 +442,11 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                     async with http.stream("POST", f"{OLLAMA}/api/chat", json=payload) as r:
                         if r.status_code != 200:
                             body = (await r.aread()).decode()[:200]
-                            yield sse({"type": "error", "text": f"Model host said {r.status_code}: {body}"})
+                            print("MODEL HOST %s: %s" % (r.status_code, body), flush=True)
+                            yield sse({"type": "error", "text":
+                                "I am having trouble with part of my system right now. "
+                                "Account questions still work; please try this one "
+                                "again in a few minutes."})
                             return
                         async for line in r.aiter_lines():
                             if not line.strip():
@@ -507,7 +511,13 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
             yield sse({"type": "done", "ms": int((time.time() - t0) * 1000)})
 
         except httpx.ConnectError:
-            yield sse({"type": "error", "text": "Cannot reach the model host. Is Ollama running?"})
+            # Ops detail goes in the log; the client gets a usable next step.
+            print("MODEL HOST UNREACHABLE at %s" % OLLAMA, flush=True)
+            yield sse({"type": "error", "text":
+                "I am having trouble with part of my system right now. I can still "
+                "answer questions about your accounts, documents, meetings, and "
+                "fees, and I can still take you around the portal. Please try that "
+                "question again in a few minutes."})
         except Exception as e:
             yield sse({"type": "error", "text": f"{type(e).__name__}: {e}"})
 
