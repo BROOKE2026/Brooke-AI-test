@@ -28,6 +28,10 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+        env:
+          # Permanent Tailscale Funnel hostname for the API. Baked in at build
+          # time so the published site works with nothing to configure.
+          VITE_API_BASE: https://servers-mac-mini.tail64e16c.ts.net
       - uses: actions/configure-pages@v5
         with:
           enablement: true
