@@ -53,7 +53,9 @@ export default function Login({ onSignedIn, onSettings }) {
             enforced on the server, not in the model.
           </p>
         </div>
-        <button className="link-btn" onClick={onSettings}>Connection settings</button>
+        <button className="link-btn" onClick={onSettings}>
+          Connection settings ({getApiBase().replace(/^https?:\/\//, '')})
+        </button>
       </div>
     </main>
   )

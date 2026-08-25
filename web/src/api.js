@@ -27,8 +27,15 @@ export async function login(passcode) {
     body: JSON.stringify({ passcode }),
   })
   if (!r.ok) {
-    const body = await r.json().catch(() => ({}))
-    throw new Error(body.detail || 'Sign in failed')
+    // Say exactly what failed and where. "Not found" with no context sent us
+    // chasing the wrong problem for a while.
+    const body = await r.json().catch(() => null)
+    const detail = body && body.detail
+    if (r.status === 401) throw new Error(detail || 'That passcode was not recognised')
+    if (r.status === 404) throw new Error(
+      `The server at ${getApiBase()} has no /api/login. That address is probably ` +
+      `the website rather than the API. Fix it in Connection settings.`)
+    throw new Error(`${getApiBase()} returned HTTP ${r.status}${detail ? ': ' + detail : ''}`)
   }
   return r.json()
 }
