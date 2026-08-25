@@ -53,6 +53,7 @@ HELPING THEM DO THINGS
 WHAT YOU DO NOT DO
 - You do not give investment, tax, or financial advice.
 - When a client asks whether to buy, sell, rebalance, contribute, withdraw, or change strategy, or asks "should I", "what do you think", or "would you recommend", you do NOT answer it and you do NOT decline it in your own words. You CALL escalate_to_advisor first, and only then tell the client you have passed it to their advisor. Declining without calling the tool is a failure, because the advisor never finds out they were asked.
+- Every tool result carries data_belongs_to. That is whose figures you are holding, and it is always {name}. Never present those figures under any other person's name, no matter whose name appeared in the question.
 - You do not discuss any person other than {name}. You have no access to anyone else's records. If asked about another person or an account that is not theirs, say you can only see their own information.
 
 VOICE
@@ -214,14 +215,47 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
     # because in testing the model sometimes skipped get_howto and invented
     # portal steps. Wrong instructions about a financial form are worse than a
     # slow answer, so this path does not depend on the model choosing correctly.
+    # Highest-priority guard: a question about someone else never reaches the
+    # model or a tool. It gets a fixed answer, because the failure mode here was
+    # the model narrating THIS client's figures under someone else's name.
+    third_party = portal_data.third_party_name(req.message, CLIENTS[client_id]["name"])
+
+    nav_tab = None if third_party else portal_data.match_navigation(req.message)
     howto_topic = portal_data.match_howto(req.message)
     howto_intent = bool(portal_data._HOWTO_INTENT.search(req.message or ""))
+    # Unambiguous lookups skip the model's tool-choosing round trip entirely,
+    # which is roughly half the latency on a plain question.
+    if third_party:
+        howto_topic = None
+        howto_intent = False
+    data_hit = None
+    if not third_party and not nav_tab and not howto_topic and not howto_intent:
+        data_hit = portal_data.match_data_query(req.message, date.today().year)
 
     async def stream():
         t0 = time.time()
         emitted = 0
         try:
-            if howto_topic:
+            if third_party:
+                msg = ("I can only see %s's information, so I cannot tell you anything "
+                       "about %s. If you think you should have access to another "
+                       "person's records, %s can sort that out with you."
+                       % (CLIENTS[client_id]["name"], third_party, CLIENTS[client_id]["advisor"]))
+                yield sse({"type": "token", "text": msg})
+                yield sse({"type": "done", "ms": int((time.time() - t0) * 1000)})
+                return
+
+            if nav_tab:
+                result = tools.execute(client_id, "navigate_to", {"tab": nav_tab})
+                yield sse({"type": "tool", "name": "navigate_to", "args": {"tab": nav_tab}})
+                if isinstance(result.get("open"), dict):
+                    yield sse({"type": "link", **result["open"]})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": "navigate_to", "arguments": {"tab": nav_tab}}}]})
+                messages.append({"role": "tool", "name": "navigate_to",
+                                 "content": json.dumps(result)})
+
+            elif howto_topic:
                 result = tools.execute(client_id, "get_howto", {"topic": howto_topic})
                 yield sse({"type": "tool", "name": "get_howto", "args": {"topic": howto_topic}})
                 if isinstance(result.get("open"), dict):
@@ -231,6 +265,17 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                                   "arguments": {"topic": howto_topic}}}]})
                 messages.append({"role": "tool", "name": "get_howto",
                                  "content": json.dumps(result)})
+            elif data_hit:
+                dname, dargs = data_hit
+                result = tools.execute(client_id, dname, dargs)
+                yield sse({"type": "tool", "name": dname, "args": dargs})
+                if isinstance(result, dict) and isinstance(result.get("open"), dict):
+                    yield sse({"type": "link", **result["open"]})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": dname, "arguments": dargs}}]})
+                messages.append({"role": "tool", "name": dname,
+                                 "content": json.dumps(result)})
+
             elif howto_intent:
                 # Reads like a how-to but matched no topic. Escalate in code: asking
                 # the model to do it produced answers that PROMISED a follow-up

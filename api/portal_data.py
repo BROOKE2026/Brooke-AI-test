@@ -205,3 +205,126 @@ def match_howto(text):
         if hits > score:
             best, score = topic, hits
     return best if score else None
+
+
+# ---------------------------------------------------------------------------
+# Fast path for plain data lookups.
+#
+# Normally a data question costs two model calls: one where the model decides
+# which tool to use, and one where it writes the answer. When the question is
+# unambiguous we can pick the tool in code and skip the first call entirely,
+# which roughly halves time to answer. Deliberately conservative: anything that
+# is not a clear match falls through to the model, which still has every tool.
+# ---------------------------------------------------------------------------
+
+_YEAR = re.compile(r"\b(19|20)\d{2}\b")
+
+_DATA_PATTERNS = [
+    ("get_accounts",          [r"\b(account )?balance", r"\bhow much (do i have|is in)",
+                               r"\bmy accounts\b", r"\btotal (value|balance)", r"\bnet worth\b",
+                               r"\bwhat.{0,12}\bi have\b.{0,16}\b(invested|accounts?)\b"]),
+    ("get_tax_return",        [r"\bagi\b", r"\badjusted gross\b", r"\btax return\b",
+                               r"\bwhat did i (pay|owe) in tax", r"\beffective (tax )?rate\b",
+                               r"\bfiling status\b"]),
+    ("get_documents",         [r"\bwhat documents\b", r"\bmy documents\b", r"\bdocuments (do i|on file)",
+                               r"\bwhat.{0,14}(statements?|paperwork)\b.{0,14}\b(have|file)"]),
+    ("get_meetings",          [r"\bnext meeting\b", r"\bmy meetings?\b", r"\bwhen.{0,20}\bmeeting\b",
+                               r"\bupcoming (meeting|appointment)"]),
+    ("get_fees",              [r"\bmy fees?\b", r"\badvisory fees?\b", r"\bwhat.{0,12}\bfee",
+                               r"\bhow much.{0,20}\b(charge|fee)"]),
+    ("get_beneficiaries",     [r"\bbeneficiar", r"\bwho (gets|inherits)\b"]),
+    ("get_contribution_room", [r"\bcontribution room\b", r"\bhow much (more )?can i (contribute|put)",
+                               r"\bhow much.{0,20}\broom\b", r"\bmaxed out\b"]),
+]
+
+
+def match_data_query(text, this_year):
+    """Return (tool_name, args) for an unambiguous lookup, else None."""
+    if not text:
+        return None
+    low = text.lower()
+
+    # Never fast-path something that is really a how-to or an advice question.
+    if _HOWTO_INTENT.search(text):
+        return None
+    if re.search(r"\b(should i|do you (think|recommend)|would you|is it (a )?good|"
+                 r"what do you think|advise|advice|better off)\b", low):
+        return None
+
+    for tool, pats in _DATA_PATTERNS:
+        if not any(re.search(p, low) for p in pats):
+            continue
+        if tool == "get_tax_return":
+            m = _YEAR.search(text)
+            if m:
+                year = int(m.group(0))
+            elif "last year" in low or "previous year" in low:
+                year = this_year - 1
+            elif "this year" in low or "current year" in low:
+                year = this_year
+            else:
+                year = this_year - 1      # a filed return means the prior year
+            return tool, {"year": year}
+        if tool == "get_contribution_room":
+            m = _YEAR.search(text)
+            return tool, {"year": int(m.group(0)) if m else this_year}
+        return tool, {}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Third-party guard.
+#
+# Asked "what is <other client>'s tax return", the model looked up the SESSION
+# client's data (correctly, the server gave it nothing else) and then narrated it
+# under the name from the question. No data crossed, but the client is told it
+# did. Refuse these in code before any lookup happens.
+# ---------------------------------------------------------------------------
+
+_POSSESSIVE = re.compile(r"\b([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20}){0,2})'s\b")
+_ABOUT = re.compile(
+    r"\b(?:about|for|does|is|has|of)\s+([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20}){1,2})\b")
+
+
+def third_party_name(text, client_name):
+    """A person named in the question who is not the signed-in client, else None."""
+    if not text or not client_name:
+        return None
+    own = {p.lower() for p in client_name.split()}
+    own |= {"i", "me", "my", "mine", "we", "our", "us"}
+    for rx in (_POSSESSIVE, _ABOUT):
+        for m in rx.finditer(text):
+            cand = m.group(1).strip()
+            parts = [p.lower() for p in cand.split()]
+            if any(p in own for p in parts):
+                continue
+            # ignore the firm, the advisor, and obvious non-people
+            if cand.lower() in {"brookhaven", "brooke", "jacob", "jacob chandler",
+                                "roth", "traditional", "the", "form", "forms"}:
+                continue
+            return cand
+    return None
+
+
+_NAV_INTENT = re.compile(
+    r"\b(take me to|go to|open (the |my )?|show me (the |my )?|bring me to|navigate to|jump to)\b", re.I)
+
+_TAB_WORDS = {
+    "forms":     ["form", "forms", "paperwork"],
+    "documents": ["document", "documents", "statement", "statements", "files"],
+    "tax":       ["tax", "taxes", "return", "returns"],
+    "meetings":  ["meeting", "meetings", "calendar", "appointment"],
+    "accounts":  ["account", "accounts", "holdings", "portfolio", "balances"],
+    "overview":  ["overview", "dashboard", "home", "summary"],
+}
+
+
+def match_navigation(text):
+    """Return a tab when the client is plainly asking to be taken somewhere."""
+    if not text or not _NAV_INTENT.search(text):
+        return None
+    low = text.lower()
+    for tab, words in _TAB_WORDS.items():
+        if any(re.search(r"\b%s\b" % w, low) for w in words):
+            return tab
+    return None

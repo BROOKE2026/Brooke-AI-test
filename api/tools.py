@@ -304,7 +304,11 @@ REGISTRY = {
 
 
 def execute(client_id, name, args):
-    """Run a model-requested tool against exactly one client's data."""
+    """Run a model-requested tool against exactly one client's data.
+
+    Every result is stamped with whose data it is. Without this the model happily
+    narrated one client's figures under a name lifted from the question, which
+    reads exactly like a data breach even though none occurred."""
     fn = REGISTRY.get(name)
     if not fn:
         return {"error": f"Unknown tool: {name}"}
@@ -314,7 +318,13 @@ def execute(client_id, name, args):
     for forbidden in ("client_id", "user_id", "client", "user"):
         args.pop(forbidden, None)
     try:
-        return fn(client_id, **args)
+        out = fn(client_id, **args)
+        if isinstance(out, dict) and "error" not in out:
+            who = CLIENTS.get(client_id, {}).get("name")
+            if who:
+                out = dict(out)
+                out["data_belongs_to"] = who
+        return out
     except TypeError as e:
         return {"error": f"Bad arguments for {name}: {e}"}
     except PermissionError as e:
