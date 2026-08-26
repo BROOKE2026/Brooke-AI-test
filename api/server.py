@@ -25,6 +25,7 @@ from pydantic import BaseModel
 import tools
 import portal_data
 import instant
+import storage
 from demo_data import PASSCODES, CLIENTS
 
 OLLAMA   = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -97,7 +98,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SESSIONS = {}                       # token -> {client_id, created}
+SESSIONS = storage.load_sessions()  # token -> {client_id, created}; survives restarts
 HITS = defaultdict(list)            # token -> [timestamps]
 SESSION_TTL = 8 * 3600
 
@@ -155,8 +156,11 @@ async def login(req: LoginReq):
     for t in dead:
         SESSIONS.pop(t, None)
         HITS.pop(t, None)
+    storage.sweep_sessions(SESSION_TTL)
     tok = secrets.token_urlsafe(32)
-    SESSIONS[tok] = {"client_id": cid, "created": time.time()}
+    created = time.time()
+    SESSIONS[tok] = {"client_id": cid, "created": created}
+    storage.save_session(tok, cid, created)
     c = CLIENTS[cid]
     return {"token": tok, "name": c["name"], "advisor": c["advisor"], "since": c["since"]}
 
@@ -171,7 +175,7 @@ async def portal(authorization: str = Header(None)):
         "accounts": c["accounts"],
         "holdings": c["holdings"],
         "documents": c["documents"],
-        "meetings": c["meetings"],
+        "meetings": storage.load_meetings(cid) + c["meetings"],
         "tax_returns": {str(k): v for k, v in sorted(c["tax_returns"].items(), reverse=True)},
         "activity": c["activity"],
         "beneficiaries": c["beneficiaries"],
@@ -193,8 +197,7 @@ class MeetingReq(BaseModel):
 async def meeting_request(req: MeetingReq, authorization: str = Header(None)):
     cid = resolve(authorization, rate=False)
     c = CLIENTS[cid]
-    open_reqs = [m for m in c["meetings"] if m.get("status") == "requested"]
-    if len(open_reqs) >= 3:
+    if storage.count_open_meetings(cid) >= 3:
         raise HTTPException(429, "You already have 3 open meeting requests. "
                                  "The office will be in touch about those first.")
     kind = "Tax Planning Call" if req.advisor_type == "tax" else "Advisor Call"
@@ -202,7 +205,7 @@ async def meeting_request(req: MeetingReq, authorization: str = Header(None)):
                "time": req.time or "flexible",
                "type": kind, "status": "requested",
                "topic": req.topic[:140]}
-    c["meetings"].insert(0, meeting)
+    storage.save_meeting(cid, meeting)
     ics = build_ics(kind, req.topic, req.date, req.time) if req.date and req.time else None
     return {"ok": True, "meeting": meeting, "ics": ics,
             "note": "The office confirms requests within one business day."}
@@ -212,6 +215,7 @@ async def meeting_request(req: MeetingReq, authorization: str = Header(None)):
 async def logout(authorization: str = Header(None)):
     if authorization and authorization.startswith("Bearer "):
         SESSIONS.pop(authorization[7:], None)
+        storage.drop_session(authorization[7:])
     return {"ok": True}
 
 
@@ -321,7 +325,14 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
             and not howto_topic and not howto_intent and not data_hit
             and portal_data.is_hard(req.message))
 
-    async def stream():
+    route = ("third_party" if third_party else "tax" if taxq else "advice" if advice
+             else "nav" if nav_tab else ("howto:" + howto_topic) if howto_topic
+             else "howto_intent" if howto_intent
+             else "multi" if multi_hits else ("data:" + data_hit[0]) if data_hit
+             else "model")
+    storage.log_turn(client_id, "client", req.message, route=route)
+
+    async def _gen():
         t0 = time.time()
         emitted = 0
         try:
@@ -546,6 +557,37 @@ async def chat(req: ChatReq, authorization: str = Header(None)):
                 "question again in a few minutes."})
         except Exception as e:
             yield sse({"type": "error", "text": f"{type(e).__name__}: {e}"})
+
+    async def stream():
+        # Everything the client is shown funnels through here, so the
+        # transcript records the reply exactly as rendered, on every path,
+        # including error paths and mid-stream disconnects.
+        shown, ms = [], None
+        try:
+            async for chunk in _gen():
+                for line in chunk.splitlines():
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        e = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    t = e.get("type")
+                    if t == "token":
+                        shown.append(e.get("text", ""))
+                    elif t == "steps" and e.get("steps"):
+                        shown.append("\n[steps shown: " + "; ".join(e["steps"]) + "]")
+                    elif t == "link":
+                        shown.append("\n[button: %s]" % e.get("label"))
+                    elif t == "schedule":
+                        shown.append("\n[scheduling card shown]")
+                    elif t == "error":
+                        shown.append("\n[error shown: %s]" % e.get("text", ""))
+                    elif t == "done":
+                        ms = e.get("ms")
+                yield chunk
+        finally:
+            storage.log_turn(client_id, "brooke", "".join(shown), route=route, ms=ms)
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
